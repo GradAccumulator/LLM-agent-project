@@ -8,6 +8,12 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from src.tools import (
+    ToolCallRecord,
+    ToolRegistry,
+    build_default_tool_registry,
+)
+
 
 DEFAULT_INSTRUCTIONS = """\
 너는 Windows 데스크톱에서 동작하는 음성 비서 '자비스'다.
@@ -16,9 +22,11 @@ DEFAULT_INSTRUCTIONS = """\
 - 사용자가 다른 언어를 요구하지 않는 한 한국어로 답한다.
 - 음성으로 읽기 좋도록 자연스럽고 간결하게 답한다.
 - 보통 1~3문장으로 답하고, 필요한 경우에만 더 자세히 설명한다.
-- 현재 단계에서는 컴퓨터 제어 도구가 연결되어 있지 않다.
-- 실제로 수행하지 않은 컴퓨터 작업을 수행했다고 말하지 않는다.
-- 컴퓨터 조작 요청을 받으면 아직 제어 기능이 연결되지 않았다고 짧게 알린다.
+- 사용자의 요청을 수행하는 데 등록된 도구가 필요하면 도구를 사용한다.
+- 도구를 사용하지 않고 실제 작업을 수행했다고 거짓말하지 않는다.
+- 도구 결과가 실패라면 성공했다고 말하지 말고 실패 이유를 짧게 설명한다.
+- 사용자가 요청하지 않은 앱 실행, 웹 검색, 사이트 열기, 메모 생성을 하지 않는다.
+- 등록되지 않은 컴퓨터 작업은 아직 지원하지 않는다고 솔직하게 말한다.
 - 확실하지 않은 내용은 추측해서 단정하지 않는다.
 """
 
@@ -31,6 +39,8 @@ class AgentConfig:
     timeout_seconds: float = 60.0
     max_retries: int = 2
     use_memory: bool = True
+    max_tool_rounds: int = 4
+    tools_enabled: bool = True
     instructions: str = DEFAULT_INSTRUCTIONS
 
 
@@ -43,10 +53,11 @@ class AgentReply:
     input_tokens: int | None
     output_tokens: int | None
     total_tokens: int | None
+    tool_calls: tuple[ToolCallRecord, ...]
 
 
 class JarvisAgent:
-    """Small wrapper around the OpenAI Responses API."""
+    """OpenAI Responses API wrapper with local function tools."""
 
     _ALLOWED_REASONING_EFFORTS = {
         "none",
@@ -57,7 +68,11 @@ class JarvisAgent:
         "max",
     }
 
-    def __init__(self, config: AgentConfig) -> None:
+    def __init__(
+        self,
+        config: AgentConfig,
+        tool_registry: ToolRegistry | None = None,
+    ) -> None:
         if not config.model.strip():
             raise ValueError("LLM model must not be empty.")
         if (
@@ -74,6 +89,8 @@ class JarvisAgent:
             raise ValueError("timeout_seconds must be positive.")
         if config.max_retries < 0:
             raise ValueError("max_retries must not be negative.")
+        if config.max_tool_rounds <= 0:
+            raise ValueError("max_tool_rounds must be positive.")
 
         load_dotenv()
         api_key = os.environ.get("OPENAI_API_KEY", "").strip()
@@ -93,17 +110,27 @@ class JarvisAgent:
             ) from exc
 
         self.config = config
-        self._openai = openai_module
         self._client = openai_module.OpenAI(
             api_key=api_key,
             timeout=config.timeout_seconds,
             max_retries=config.max_retries,
+        )
+        self._tool_registry = (
+            tool_registry
+            if tool_registry is not None
+            else build_default_tool_registry()
         )
         self._previous_response_id: str | None = None
 
     @property
     def previous_response_id(self) -> str | None:
         return self._previous_response_id
+
+    @property
+    def tool_names(self) -> tuple[str, ...]:
+        if not self.config.tools_enabled:
+            return ()
+        return self._tool_registry.names
 
     def reset_conversation(self) -> None:
         self._previous_response_id = None
@@ -121,6 +148,15 @@ class JarvisAgent:
             return int(value) if value is not None else None
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _add_optional(
+        current: int | None,
+        value: int | None,
+    ) -> int | None:
+        if current is None and value is None:
+            return None
+        return (current or 0) + (value or 0)
 
     @staticmethod
     def _friendly_api_error(error: BaseException) -> RuntimeError:
@@ -155,32 +191,117 @@ class JarvisAgent:
             f"OpenAI response generation failed: {message or error_name}"
         )
 
-    def ask(self, user_text: str) -> AgentReply:
-        user_text = user_text.strip()
-        if not user_text:
-            raise ValueError("LLM input text must not be empty.")
-
+    def _create_response(
+        self,
+        *,
+        input_items: list[Any],
+        previous_response_id: str | None,
+    ) -> Any:
         request: dict[str, Any] = {
             "model": self.config.model,
             "instructions": self.config.instructions,
-            "input": [{"role": "user", "content": user_text}],
+            "input": input_items,
             "reasoning": {"effort": self.config.reasoning_effort},
             "max_output_tokens": self.config.max_output_tokens,
             "store": self.config.use_memory,
         }
 
-        if self.config.use_memory and self._previous_response_id:
-            request["previous_response_id"] = self._previous_response_id
+        if self.config.tools_enabled and self._tool_registry.names:
+            request["tools"] = self._tool_registry.schemas
+            request["tool_choice"] = "auto"
+
+        if previous_response_id:
+            request["previous_response_id"] = previous_response_id
+
+        try:
+            return self._client.responses.create(**request)
+        except Exception as exc:
+            raise self._friendly_api_error(exc) from exc
+
+    def ask(self, user_text: str) -> AgentReply:
+        user_text = user_text.strip()
+        if not user_text:
+            raise ValueError("LLM input text must not be empty.")
+
+        conversation_parent = (
+            self._previous_response_id
+            if self.config.use_memory
+            else None
+        )
+        input_items: list[Any] = [
+            {"role": "user", "content": user_text}
+        ]
+
+        tool_records: list[ToolCallRecord] = []
+        input_tokens: int | None = None
+        output_tokens: int | None = None
+        total_tokens: int | None = None
 
         started_at = perf_counter()
-        try:
-            response = self._client.responses.create(**request)
-        except Exception as exc:
-            # Keep OpenAI SDK-specific exception imports out of module import
-            # time so users get a clean dependency/setup error.
-            raise self._friendly_api_error(exc) from exc
-        elapsed_seconds = perf_counter() - started_at
+        response = self._create_response(
+            input_items=input_items,
+            previous_response_id=conversation_parent,
+        )
 
+        for round_index in range(self.config.max_tool_rounds + 1):
+            usage = getattr(response, "usage", None)
+            input_tokens = self._add_optional(
+                input_tokens,
+                self._usage_value(usage, "input_tokens"),
+            )
+            output_tokens = self._add_optional(
+                output_tokens,
+                self._usage_value(usage, "output_tokens"),
+            )
+            total_tokens = self._add_optional(
+                total_tokens,
+                self._usage_value(usage, "total_tokens"),
+            )
+
+            function_calls = [
+                item
+                for item in getattr(response, "output", ())
+                if getattr(item, "type", None) == "function_call"
+            ]
+            if not function_calls:
+                break
+
+            if round_index >= self.config.max_tool_rounds:
+                raise RuntimeError(
+                    "The model exceeded the maximum number of tool rounds."
+                )
+
+            # Preserve all model output, including reasoning items. Reasoning
+            # models require these items to be returned with tool outputs.
+            input_items.extend(getattr(response, "output", ()))
+
+            for call in function_calls:
+                result = self._tool_registry.execute(
+                    str(getattr(call, "name", "")),
+                    str(getattr(call, "arguments", "{}")),
+                )
+                tool_records.append(
+                    ToolCallRecord(
+                        name=result.name,
+                        arguments=result.arguments,
+                        success=result.success,
+                        output=result.output,
+                    )
+                )
+                input_items.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": str(getattr(call, "call_id", "")),
+                        "output": result.output,
+                    }
+                )
+
+            response = self._create_response(
+                input_items=input_items,
+                previous_response_id=conversation_parent,
+            )
+
+        elapsed_seconds = perf_counter() - started_at
         text = str(getattr(response, "output_text", "") or "").strip()
         if not text:
             text = "응답을 생성하지 못했습니다."
@@ -189,13 +310,13 @@ class JarvisAgent:
         if self.config.use_memory and response_id:
             self._previous_response_id = response_id
 
-        usage = getattr(response, "usage", None)
         return AgentReply(
             text=text,
             response_id=response_id,
             model=str(getattr(response, "model", self.config.model)),
             elapsed_seconds=elapsed_seconds,
-            input_tokens=self._usage_value(usage, "input_tokens"),
-            output_tokens=self._usage_value(usage, "output_tokens"),
-            total_tokens=self._usage_value(usage, "total_tokens"),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            tool_calls=tuple(tool_records),
         )

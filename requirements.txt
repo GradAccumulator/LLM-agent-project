@@ -6,3 +6,4 @@ silero-vad==6.2.1
 faster-whisper==1.2.1
 openai>=2.46,<3
 python-dotenv>=1.1,<2
+psutil>=7,<8

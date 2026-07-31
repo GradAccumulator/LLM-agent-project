@@ -1,132 +1,179 @@
-# LLM Agent — Step 5: GPT Reasoning
+# LLM Agent — Step 6: GPT Tool Calling
 
-`Hey Jarvis`를 감지한 뒤 음성을 로컬에서 텍스트로 바꾸고,
-OpenAI Responses API에 전달해 자비스의 답변을 생성합니다.
+`Hey Jarvis`로 명령을 받은 뒤 GPT가 필요한 로컬 도구를 선택하고,
+도구 실행 결과를 다시 GPT에 전달해 최종 답변을 생성합니다.
 
-## 동작 흐름
+## 전체 흐름
 
 ```text
 마이크 자동 선택
-→ 16 kHz 리샘플링
 → "Hey Jarvis" 감지
-→ Silero VAD로 명령 구간 녹음
+→ Silero VAD 명령 녹음
 → Faster-Whisper 로컬 STT
-→ GPT-5.6로 답변 생성
-→ 터미널에 답변 출력
-→ 다시 웨이크워드 대기
+→ GPT가 도구 사용 여부 판단
+→ 로컬 Python 도구 실행
+→ 실행 결과를 GPT에 반환
+→ 최종 답변을 터미널에 출력
 ```
 
-아직 컴퓨터 제어와 음성 출력은 연결하지 않았습니다. 따라서 이번 단계에서는
-자비스의 답변이 터미널에 텍스트로 출력됩니다.
+OpenAI Responses API의 function calling 흐름을 사용합니다.
 
-## 1. 설치
+```text
+사용자 명령
+→ GPT function_call
+→ 로컬 함수 실행
+→ function_call_output
+→ GPT 최종 응답
+```
 
-기존 가상환경에서 다음 명령을 실행합니다.
+## 이번 단계에서 실제로 가능한 작업
+
+### 앱 열기
+
+지원 앱:
+
+- 계산기
+- 메모장
+- 파일 탐색기
+- Windows 설정
+- 기본 브라우저
+- VS Code
+- 터미널
+
+예시:
+
+```text
+계산기 켜줘
+메모장 열어줘
+VS Code 실행해줘
+```
+
+### 웹사이트 열기
+
+지원 사이트:
+
+- YouTube
+- Google
+- Naver
+- GitHub
+- ChatGPT
+- OpenAI
+
+예시:
+
+```text
+유튜브 열어줘
+깃허브 열어줘
+```
+
+### 브라우저 검색
+
+Google, Naver, YouTube 검색을 기본 브라우저에서 엽니다.
+
+```text
+유튜브에서 뉴진스 ETA 검색해줘
+구글에서 파이썬 GIL 검색해줘
+```
+
+### 시스템 상태 조회
+
+CPU, RAM, 디스크, 배터리와 사용 가능한 경우 NVIDIA GPU 상태를 읽습니다.
+
+```text
+컴퓨터 상태 알려줘
+그래픽카드 온도 알려줘
+```
+
+### 시간 조회
+
+```text
+지금 몇 시야?
+오늘 날짜 알려줘
+```
+
+### 메모 저장
+
+프로젝트의 `notes/` 폴더에 Markdown 파일을 생성합니다.
+
+```text
+내일 텐서보드 로거 수정하기라고 메모해줘
+```
+
+## 안전 설계
+
+이번 단계에서는 GPT가 임의의 PowerShell, CMD 또는 Python 코드를 실행할 수
+없습니다. 앱과 사이트는 허용 목록으로 제한되어 있고, 임의 파일 삭제나
+프로세스 종료 기능도 넣지 않았습니다.
+
+## 설치
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-## 2. OpenAI API 키 설정
-
-### 방법 A: `.env` 파일
-
-프로젝트 루트에서 예시 파일을 복사합니다.
+## API 키 설정
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-`.env` 파일을 열고 값을 자신의 API 키로 바꿉니다.
+`.env`:
 
 ```dotenv
 OPENAI_API_KEY=your_api_key_here
 ```
 
-`.env`는 `.gitignore`에 포함되어 있으므로 커밋하지 않습니다.
-
-### 방법 B: Windows 환경 변수
-
-```powershell
-setx OPENAI_API_KEY "your_api_key_here"
-```
-
-`setx`를 사용했다면 현재 터미널을 닫고 새 터미널에서 실행합니다.
-
-## 3. 실행
+## 실행
 
 ```powershell
 python -m src.main
 ```
 
-## 기본 설정
+기본값:
 
-- 웨이크워드: `Hey Jarvis`
+- 호출어: `Hey Jarvis`
 - 웨이크워드 임계값: `0.45`
-- VAD 임계값: `0.50`
-- STT 모델: `turbo`
-- STT 언어: 한국어 (`ko`)
-- LLM 모델: `gpt-5.6-luna`
-- Reasoning effort: `low`
-- 최대 출력: `512` 토큰
-- 대화 기억: 현재 프로그램 실행 중 활성화
+- STT: Faster-Whisper `turbo`
+- LLM: `gpt-5.6-luna`
+- Reasoning: `low`
+- Tool choice: `auto`
+- 한 명령당 최대 도구 라운드: `4`
+- 대화 기억: 활성화
 
-개발·테스트 중 API 비용과 응답 시간을 줄이기 위해 기본 모델은
-`gpt-5.6-luna`로 설정했습니다. 더 강한 모델을 사용하려면:
+## 도구 관련 옵션
+
+도구를 완전히 끄기:
 
 ```powershell
-python -m src.main --llm-model gpt-5.6-terra
-python -m src.main --llm-model gpt-5.6
+python -m src.main --disable-tools
+```
+
+최대 도구 라운드 변경:
+
+```powershell
+python -m src.main --llm-max-tool-rounds 6
 ```
 
 ## 실행 예시
 
 ```text
-[08:02:11] WAKE WORD DETECTED | phrase=hey jarvis | score=0.812
-COMMAND: waiting for speech...
-TRANSCRIBING...
-TRANSCRIPT [ko 100.0% | 0.28s]: 파이썬의 GIL이 뭐야?
+TRANSCRIPT [ko 100.0% | 0.28s]: 계산기 켜줘
 THINKING...
-JARVIS [gpt-5.6-luna | 1.42s | 86→74 tokens]:
-GIL은 한 프로세스 안에서 한 번에 하나의 스레드만 파이썬 바이트코드를
-실행하게 하는 CPython의 잠금입니다.
+TOOL open_application({"application": "calculator"})
+TOOL RESULT: success
+JARVIS [gpt-5.6-luna | 1.03s | 150→35 tokens | tools=1]:
+계산기를 열었습니다.
 ```
-
-후속 명령은 같은 실행 세션의 대화 문맥을 이어갑니다.
 
 ```text
-사용자: 그럼 멀티스레딩은 의미가 없어?
-자비스: I/O 작업에서는 여전히 유용하지만, CPU 연산 병렬화에는 제약이 있습니다.
+TRANSCRIPT [ko 100.0% | 0.31s]: 컴퓨터 상태 알려줘
+THINKING...
+TOOL get_system_status({})
+TOOL RESULT: success
+JARVIS [...]:
+현재 CPU 사용률은 7%, 메모리는 31% 사용 중이고 GPU 온도는 45도입니다.
 ```
 
-다음 음성 명령 중 하나를 말하면 대화 문맥만 초기화합니다.
+## 다음 단계
 
-```text
-대화 초기화
-기억 초기화
-대화 리셋
-컨텍스트 초기화
-```
-
-## LLM 관련 옵션
-
-```powershell
-python -m src.main --llm-model gpt-5.6-terra
-python -m src.main --llm-reasoning low
-python -m src.main --llm-reasoning medium
-python -m src.main --llm-max-output-tokens 800
-python -m src.main --llm-timeout 90
-python -m src.main --no-llm-memory
-```
-
-전체 옵션:
-
-```powershell
-python -m src.main --help
-```
-
-## 주의
-
-ChatGPT Plus와 OpenAI API는 별도 서비스입니다. API 호출에는 별도의 API
-결제 설정이 필요하며, 사용량에 따라 비용이 발생합니다. API 키는 코드나
-Git 저장소에 직접 넣지 마세요.
+다음 단계에서는 현재 터미널 텍스트 답변을 로컬 TTS로 읽게 만듭니다.

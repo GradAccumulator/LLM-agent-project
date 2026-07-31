@@ -11,3 +11,4 @@ recordings/
 models/
 .env.*
 !.env.example
+notes/

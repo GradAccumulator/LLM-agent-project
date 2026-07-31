@@ -168,6 +168,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not link responses across voice commands.",
     )
+    parser.add_argument(
+        "--disable-tools",
+        action="store_true",
+        help="Disable all local function tools.",
+    )
+    parser.add_argument(
+        "--llm-max-tool-rounds",
+        type=int,
+        default=4,
+        help="Maximum function-calling rounds per command. Default: 4.",
+    )
     return parser
 
 
@@ -251,6 +262,8 @@ def run(args: argparse.Namespace) -> int:
                 max_output_tokens=args.llm_max_output_tokens,
                 timeout_seconds=args.llm_timeout,
                 use_memory=not args.no_llm_memory,
+                max_tool_rounds=args.llm_max_tool_rounds,
+                tools_enabled=not args.disable_tools,
             )
         )
 
@@ -270,7 +283,11 @@ def run(args: argparse.Namespace) -> int:
         print(f"STT language   : {language_text}")
         print(f"LLM model      : {args.llm_model}")
         print(f"LLM reasoning  : {args.llm_reasoning}")
+        tools_text = (
+            ", ".join(agent.tool_names) if agent.tool_names else "disabled"
+        )
         print(f"LLM memory     : {memory_text}")
+        print(f"Local tools    : {tools_text}")
         print('Say "Hey Jarvis". Press Ctrl+C to stop.\n')
 
         with microphone:
@@ -345,6 +362,20 @@ def run(args: argparse.Namespace) -> int:
                     else:
                         print("THINKING...", flush=True)
                         reply = agent.ask(transcript_text)
+                        for tool_call in reply.tool_calls:
+                            arguments = str(tool_call.arguments)
+                            status = (
+                                "success"
+                                if tool_call.success
+                                else "failed"
+                            )
+                            print(
+                                f"TOOL {tool_call.name}({arguments})"
+                            )
+                            print(f"TOOL RESULT: {status}")
+                            if not tool_call.success:
+                                print(tool_call.output)
+
                         usage_text = format_token_usage(
                             reply.input_tokens,
                             reply.output_tokens,
@@ -352,7 +383,8 @@ def run(args: argparse.Namespace) -> int:
                         print(
                             f"JARVIS [{reply.model} | "
                             f"{reply.elapsed_seconds:.2f}s | "
-                            f"{usage_text}]:"
+                            f"{usage_text} | "
+                            f"tools={len(reply.tool_calls)}]:"
                         )
                         print(reply.text)
 
