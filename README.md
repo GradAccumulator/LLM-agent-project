@@ -1,179 +1,92 @@
-# LLM Agent — Step 6: GPT Tool Calling
+# LLM Agent — Step 6.2: Screen Vision
 
-`Hey Jarvis`로 명령을 받은 뒤 GPT가 필요한 로컬 도구를 선택하고,
-도구 실행 결과를 다시 GPT에 전달해 최종 답변을 생성합니다.
+자비스가 현재 화면을 캡처한 뒤 그 이미지를 GPT에 전달해 실제 화면 내용을
+보고 답변합니다.
 
-## 전체 흐름
-
-```text
-마이크 자동 선택
-→ "Hey Jarvis" 감지
-→ Silero VAD 명령 녹음
-→ Faster-Whisper 로컬 STT
-→ GPT가 도구 사용 여부 판단
-→ 로컬 Python 도구 실행
-→ 실행 결과를 GPT에 반환
-→ 최종 답변을 터미널에 출력
-```
-
-OpenAI Responses API의 function calling 흐름을 사용합니다.
+## 동작 흐름
 
 ```text
-사용자 명령
-→ GPT function_call
-→ 로컬 함수 실행
-→ function_call_output
-→ GPT 최종 응답
+"Hey Jarvis"
+→ 음성 명령 인식
+→ GPT가 현재 화면 확인이 필요하다고 판단
+→ inspect_screen 도구 호출
+→ 주 모니터 또는 전체 데스크톱을 PNG로 캡처
+→ 캡처 이미지를 OpenAI Responses API의 input_image로 전달
+→ GPT가 화면을 분석
+→ 화면을 근거로 최종 답변
 ```
 
-## 이번 단계에서 실제로 가능한 작업
-
-### 앱 열기
-
-지원 앱:
-
-- 계산기
-- 메모장
-- 파일 탐색기
-- Windows 설정
-- 기본 브라우저
-- VS Code
-- 터미널
-
-예시:
+## 가능한 명령 예시
 
 ```text
-계산기 켜줘
-메모장 열어줘
-VS Code 실행해줘
+지금 화면에 뭐가 보여?
+이 오류가 왜 발생한 거야?
+화면에 나온 코드에서 문제점을 찾아줘
+현재 열려 있는 설정이 맞는지 봐줘
+모든 모니터 화면을 보고 어디에 창이 열려 있는지 알려줘
 ```
 
-### 웹사이트 열기
+`화면 캡처해줘`라고 말하면 화면을 캡처하고, 캡처한 화면에 무엇이 보이는지도
+간단히 설명합니다.
 
-지원 사이트:
+## 등록 도구
 
-- YouTube
-- Google
-- Naver
-- GitHub
-- ChatGPT
-- OpenAI
-
-예시:
+이번 버전에서는 기존 `capture_screenshot` 대신 `inspect_screen`을 사용합니다.
 
 ```text
-유튜브 열어줘
-깃허브 열어줘
+inspect_screen(display="primary")
+inspect_screen(display="all")
 ```
 
-### 브라우저 검색
+- `primary`: 주 모니터만 확인
+- `all`: 모든 모니터를 포함한 전체 데스크톱 확인
+- 캡처 파일: `screenshots/`
+- 전송 형식: Base64 PNG image input
+- 기본 이미지 디테일: `original`
 
-Google, Naver, YouTube 검색을 기본 브라우저에서 엽니다.
+화면의 작은 글자, 오류 메시지와 코드를 읽는 데 유리하도록 기본값은
+`original`입니다. 비용이나 지연을 줄이려면 다음처럼 바꿀 수 있습니다.
 
-```text
-유튜브에서 뉴진스 ETA 검색해줘
-구글에서 파이썬 GIL 검색해줘
+```powershell
+python -m src.main --vision-detail high
+python -m src.main --vision-detail low
 ```
 
-### 시스템 상태 조회
-
-CPU, RAM, 디스크, 배터리와 사용 가능한 경우 NVIDIA GPU 상태를 읽습니다.
-
-```text
-컴퓨터 상태 알려줘
-그래픽카드 온도 알려줘
-```
-
-### 시간 조회
-
-```text
-지금 몇 시야?
-오늘 날짜 알려줘
-```
-
-### 메모 저장
-
-프로젝트의 `notes/` 폴더에 Markdown 파일을 생성합니다.
-
-```text
-내일 텐서보드 로거 수정하기라고 메모해줘
-```
-
-## 안전 설계
-
-이번 단계에서는 GPT가 임의의 PowerShell, CMD 또는 Python 코드를 실행할 수
-없습니다. 앱과 사이트는 허용 목록으로 제한되어 있고, 임의 파일 삭제나
-프로세스 종료 기능도 넣지 않았습니다.
-
-## 설치
+## 설치 및 실행
 
 ```powershell
 python -m pip install -r requirements.txt
+python -m src.main
 ```
 
-## API 키 설정
+## API 키
 
-```powershell
-Copy-Item .env.example .env
-```
-
-`.env`:
+프로젝트 루트에 `.env`를 만들고 API 키를 넣습니다.
 
 ```dotenv
 OPENAI_API_KEY=your_api_key_here
 ```
 
-## 실행
+## 개인 정보 주의
 
-```powershell
-python -m src.main
-```
-
-기본값:
-
-- 호출어: `Hey Jarvis`
-- 웨이크워드 임계값: `0.45`
-- STT: Faster-Whisper `turbo`
-- LLM: `gpt-5.6-luna`
-- Reasoning: `low`
-- Tool choice: `auto`
-- 한 명령당 최대 도구 라운드: `4`
-- 대화 기억: 활성화
-
-## 도구 관련 옵션
-
-도구를 완전히 끄기:
-
-```powershell
-python -m src.main --disable-tools
-```
-
-최대 도구 라운드 변경:
-
-```powershell
-python -m src.main --llm-max-tool-rounds 6
-```
+화면 분석을 요청하면 캡처 시점에 화면에 보이는 내용이 이미지 입력으로 API에
+전송됩니다. 비밀번호, 인증 코드, 개인 메시지처럼 보내고 싶지 않은 정보는
+화면에서 닫거나 가린 뒤 요청하세요.
 
 ## 실행 예시
 
 ```text
-TRANSCRIPT [ko 100.0% | 0.28s]: 계산기 켜줘
+TRANSCRIPT: 이 오류가 왜 나는지 화면 보고 알려줘
 THINKING...
-TOOL open_application({"application": "calculator"})
+TOOL inspect_screen({'display': 'primary'})
 TOOL RESULT: success
-JARVIS [gpt-5.6-luna | 1.03s | 150→35 tokens | tools=1]:
-계산기를 열었습니다.
+JARVIS:
+화면의 터미널에 ModuleNotFoundError가 보입니다. 현재 가상환경에 해당
+패키지가 설치되지 않은 것이 원인이므로 requirements.txt를 설치하세요.
 ```
 
-```text
-TRANSCRIPT [ko 100.0% | 0.31s]: 컴퓨터 상태 알려줘
-THINKING...
-TOOL get_system_status({})
-TOOL RESULT: success
-JARVIS [...]:
-현재 CPU 사용률은 7%, 메모리는 31% 사용 중이고 GPU 온도는 45도입니다.
+## 커밋 메시지
+
+```bash
+git commit -m "Add GPT screen vision with screenshot tool output"
 ```
-
-## 다음 단계
-
-다음 단계에서는 현재 터미널 텍스트 답변을 로컬 TTS로 읽게 만듭니다.

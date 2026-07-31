@@ -179,6 +179,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=4,
         help="Maximum function-calling rounds per command. Default: 4.",
     )
+    parser.add_argument(
+        "--vision-detail",
+        choices=("low", "high", "original", "auto"),
+        default="original",
+        help=(
+            "Detail level for screen images sent to GPT. "
+            "Default: original."
+        ),
+    )
     return parser
 
 
@@ -264,6 +273,7 @@ def run(args: argparse.Namespace) -> int:
                 use_memory=not args.no_llm_memory,
                 max_tool_rounds=args.llm_max_tool_rounds,
                 tools_enabled=not args.disable_tools,
+                vision_detail=args.vision_detail,
             )
         )
 
@@ -287,6 +297,7 @@ def run(args: argparse.Namespace) -> int:
             ", ".join(agent.tool_names) if agent.tool_names else "disabled"
         )
         print(f"LLM memory     : {memory_text}")
+        print(f"Vision detail  : {args.vision_detail}")
         print(f"Local tools    : {tools_text}")
         print('Say "Hey Jarvis". Press Ctrl+C to stop.\n')
 

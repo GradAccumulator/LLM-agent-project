@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import base64
 import importlib
+import json
 import os
+from pathlib import Path
 from time import perf_counter
 from typing import Any
 
@@ -23,6 +26,9 @@ DEFAULT_INSTRUCTIONS = """\
 - 음성으로 읽기 좋도록 자연스럽고 간결하게 답한다.
 - 보통 1~3문장으로 답하고, 필요한 경우에만 더 자세히 설명한다.
 - 사용자의 요청을 수행하는 데 등록된 도구가 필요하면 도구를 사용한다.
+- 현재 화면의 내용, 오류, 코드, 앱 상태를 묻는 질문에는 추측하지 말고 inspect_screen 도구를 사용한다.
+- inspect_screen 결과에 첨부된 이미지를 실제로 분석한 뒤 사용자의 원래 질문에 답한다.
+- 화면에 보이지 않는 정보는 보인다고 단정하지 않는다.
 - 도구를 사용하지 않고 실제 작업을 수행했다고 거짓말하지 않는다.
 - 도구 결과가 실패라면 성공했다고 말하지 말고 실패 이유를 짧게 설명한다.
 - 사용자가 요청하지 않은 앱 실행, 웹 검색, 사이트 열기, 메모 생성을 하지 않는다.
@@ -41,6 +47,8 @@ class AgentConfig:
     use_memory: bool = True
     max_tool_rounds: int = 4
     tools_enabled: bool = True
+    vision_detail: str = "original"
+    max_vision_image_bytes: int = 25 * 1024 * 1024
     instructions: str = DEFAULT_INSTRUCTIONS
 
 
@@ -91,6 +99,12 @@ class JarvisAgent:
             raise ValueError("max_retries must not be negative.")
         if config.max_tool_rounds <= 0:
             raise ValueError("max_tool_rounds must be positive.")
+        if config.vision_detail not in {"low", "high", "original", "auto"}:
+            raise ValueError(
+                "vision_detail must be low, high, original, or auto."
+            )
+        if config.max_vision_image_bytes <= 0:
+            raise ValueError("max_vision_image_bytes must be positive.")
 
         load_dotenv()
         api_key = os.environ.get("OPENAI_API_KEY", "").strip()
@@ -191,6 +205,109 @@ class JarvisAgent:
             f"OpenAI response generation failed: {message or error_name}"
         )
 
+    @staticmethod
+    def _image_mime_type(path: Path, declared: str | None) -> str:
+        allowed = {
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "image/gif",
+        }
+        if declared in allowed:
+            return declared
+
+        suffix_map = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+            ".gif": "image/gif",
+        }
+        mime_type = suffix_map.get(path.suffix.casefold())
+        if mime_type is None:
+            raise RuntimeError(
+                f"Unsupported screenshot format: {path.suffix or '<none>'}"
+            )
+        return mime_type
+
+    def _tool_output_content(
+        self,
+        *,
+        tool_name: str,
+        success: bool,
+        output: str,
+    ) -> str | list[dict[str, Any]]:
+        """Convert a local tool result into Responses API tool output."""
+
+        if tool_name != "inspect_screen" or not success:
+            return output
+
+        try:
+            payload = json.loads(output)
+            image_path_value = payload.get("image_path")
+            if not isinstance(image_path_value, str) or not image_path_value:
+                raise RuntimeError(
+                    "inspect_screen did not return an image path."
+                )
+
+            image_path = Path(image_path_value)
+            if not image_path.is_file():
+                raise RuntimeError(
+                    f"Captured screenshot does not exist: {image_path}"
+                )
+
+            image_size = image_path.stat().st_size
+            if image_size > self.config.max_vision_image_bytes:
+                raise RuntimeError(
+                    "Captured screenshot is too large to attach "
+                    f"({image_size} bytes)."
+                )
+
+            declared_mime = payload.get("mime_type")
+            mime_type = self._image_mime_type(
+                image_path,
+                declared_mime if isinstance(declared_mime, str) else None,
+            )
+            encoded = base64.b64encode(
+                image_path.read_bytes()
+            ).decode("ascii")
+
+            metadata = {
+                key: value
+                for key, value in payload.items()
+                if key != "image_path"
+            }
+            metadata["image_attached"] = True
+
+            return [
+                {
+                    "type": "input_text",
+                    "text": json.dumps(
+                        metadata,
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                },
+                {
+                    "type": "input_image",
+                    "image_url": (
+                        f"data:{mime_type};base64,{encoded}"
+                    ),
+                    "detail": self.config.vision_detail,
+                },
+            ]
+        except Exception as exc:
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": (
+                        "The screenshot was captured but could not be "
+                        f"attached for visual analysis: {exc}"
+                    ),
+                },
+                ensure_ascii=False,
+            )
+
     def _create_response(
         self,
         *,
@@ -288,11 +405,16 @@ class JarvisAgent:
                         output=result.output,
                     )
                 )
+                output_content = self._tool_output_content(
+                    tool_name=result.name,
+                    success=result.success,
+                    output=result.output,
+                )
                 input_items.append(
                     {
                         "type": "function_call_output",
                         "call_id": str(getattr(call, "call_id", "")),
-                        "output": result.output,
+                        "output": output_content,
                     }
                 )
 

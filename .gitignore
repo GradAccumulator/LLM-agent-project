@@ -12,3 +12,4 @@ models/
 .env.*
 !.env.example
 notes/
+screenshots/

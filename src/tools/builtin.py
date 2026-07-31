@@ -262,6 +262,59 @@ def create_note(title: str, content: str) -> dict:
     }
 
 
+
+def inspect_screen(display: str) -> dict:
+    """Capture the current screen so the multimodal model can inspect it."""
+
+    try:
+        import mss
+        import mss.tools
+    except ImportError as exc:
+        raise RuntimeError(
+            "mss is not installed. Run "
+            "`python -m pip install -r requirements.txt`."
+        ) from exc
+
+    if display not in {"primary", "all"}:
+        raise ValueError("display must be 'primary' or 'all'.")
+
+    screenshot_directory = Path("screenshots")
+    screenshot_directory.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    output_path = screenshot_directory / f"{timestamp}_screen.png"
+
+    with mss.mss() as capture:
+        # monitors[0] is the complete virtual desktop.
+        # monitors[1] is the primary display.
+        monitor_index = 0 if display == "all" else 1
+        if len(capture.monitors) <= monitor_index:
+            raise RuntimeError(
+                f"Requested display is unavailable: {display}"
+            )
+
+        monitor = capture.monitors[monitor_index]
+        image = capture.grab(monitor)
+        mss.tools.to_png(
+            image.rgb,
+            image.size,
+            output=str(output_path),
+        )
+
+    absolute_path = output_path.resolve()
+    return {
+        "display": display,
+        "image_path": str(absolute_path),
+        "mime_type": "image/png",
+        "width": image.width,
+        "height": image.height,
+        "message": (
+            "The current screen was captured. Inspect the attached image "
+            "and answer the user's original question."
+        ),
+    }
+
+
 def build_default_tool_registry() -> ToolRegistry:
     registry = ToolRegistry()
 
@@ -384,6 +437,36 @@ def build_default_tool_registry() -> ToolRegistry:
                 "additionalProperties": False,
             },
             handler=create_note,
+        )
+    )
+
+
+    registry.register(
+        ToolSpec(
+            name="inspect_screen",
+            description=(
+                "현재 화면의 내용, 오류 메시지, 코드, 앱 UI 또는 시각적 "
+                "상태를 실제로 보고 답변해야 할 때 사용한다. 사용자가 "
+                "'화면 봐줘', '이 오류 뭐야', '지금 뭐가 보여'처럼 "
+                "현재 화면을 기준으로 질문하면 추측하지 말고 이 도구를 "
+                "호출한다. primary는 주 모니터, all은 모든 모니터다."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "display": {
+                        "type": "string",
+                        "enum": ["primary", "all"],
+                        "description": (
+                            "보통 primary를 사용한다. 사용자가 모든 모니터 "
+                            "또는 다른 화면까지 명시하면 all을 사용한다."
+                        ),
+                    }
+                },
+                "required": ["display"],
+                "additionalProperties": False,
+            },
+            handler=inspect_screen,
         )
     )
 
