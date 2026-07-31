@@ -13,6 +13,7 @@ from src.audio import AudioConfig, MicrophoneStream
 from src.llm import AgentConfig, JarvisAgent
 from src.speech import CaptureConfig, SpeechCapture, save_wave_file
 from src.stt import SpeechRecognizer, SpeechRecognizerConfig
+from src.tts import SpeechSynthesizer, SpeechSynthesizerConfig
 from src.vad import VoiceActivityConfig, VoiceActivityDetector
 from src.wakeword import WakeWordConfig, WakeWordDetector
 
@@ -22,6 +23,28 @@ _RESET_COMMANDS = {
     "기억초기화",
     "대화리셋",
     "컨텍스트초기화",
+}
+
+_TTS_OFF_COMMANDS = {
+    "tts끄기",
+    "tts꺼",
+    "tts꺼줘",
+    "음성끄기",
+    "음성꺼",
+    "음성꺼줘",
+    "음성출력끄기",
+    "음성출력꺼줘",
+}
+
+_TTS_ON_COMMANDS = {
+    "tts켜기",
+    "tts켜",
+    "tts켜줘",
+    "음성켜기",
+    "음성켜",
+    "음성켜줘",
+    "음성출력켜기",
+    "음성출력켜줘",
 }
 
 
@@ -188,6 +211,46 @@ def build_parser() -> argparse.ArgumentParser:
             "Default: original."
         ),
     )
+    parser.add_argument(
+        "--list-tts-voices",
+        action="store_true",
+        help="List Windows SAPI voices and exit.",
+    )
+    parser.add_argument(
+        "--disable-tts",
+        "--no-tts",
+        action="store_true",
+        help="Start with spoken responses disabled.",
+    )
+    parser.add_argument(
+        "--tts-voice",
+        default=None,
+        help=(
+            "Preferred Windows voice name substring. "
+            "Default: automatically prefer a Korean voice."
+        ),
+    )
+    parser.add_argument(
+        "--tts-rate",
+        type=int,
+        default=0,
+        help="Windows SAPI speech rate from -10 to 10. Default: 0.",
+    )
+    parser.add_argument(
+        "--tts-volume",
+        type=int,
+        default=100,
+        help="Speech volume from 0 to 100. Default: 100.",
+    )
+    parser.add_argument(
+        "--tts-max-characters",
+        type=int,
+        default=1200,
+        help=(
+            "Maximum response characters spoken aloud. "
+            "Default: 1200."
+        ),
+    )
     return parser
 
 
@@ -203,6 +266,18 @@ def play_detection_sound() -> None:
         winsound.MessageBeep(winsound.MB_OK)
     except (ImportError, RuntimeError):
         print("\a", end="", flush=True)
+
+
+def speak_safely(
+    synthesizer: SpeechSynthesizer,
+    text: str,
+) -> bool:
+    try:
+        synthesizer.speak(text)
+        return True
+    except RuntimeError as exc:
+        print(f"TTS warning: {exc}", file=sys.stderr)
+        return False
 
 
 def format_token_usage(
@@ -277,6 +352,17 @@ def run(args: argparse.Namespace) -> int:
             )
         )
 
+        print("Loading local Windows TTS...")
+        synthesizer = SpeechSynthesizer(
+            SpeechSynthesizerConfig(
+                voice_name=args.tts_voice,
+                rate=args.tts_rate,
+                volume=args.tts_volume,
+                max_characters=args.tts_max_characters,
+            )
+        )
+        tts_enabled = not args.disable_tts
+
         language_text = recognizer.language or "auto"
         memory_text = "enabled" if not args.no_llm_memory else "disabled"
         print(f"Input device   : [{microphone.device}] {info['name']}")
@@ -299,6 +385,16 @@ def run(args: argparse.Namespace) -> int:
         print(f"LLM memory     : {memory_text}")
         print(f"Vision detail  : {args.vision_detail}")
         print(f"Local tools    : {tools_text}")
+        print(
+            f"TTS voice      : {synthesizer.selected_voice.name} "
+            f"(language={synthesizer.selected_voice.language or '?'})"
+        )
+        print(f"TTS rate       : {args.tts_rate}")
+        print(f"TTS volume     : {args.tts_volume}")
+        print(
+            f"TTS output     : "
+            f"{'enabled' if tts_enabled else 'disabled'}"
+        )
         print('Say "Hey Jarvis". Press Ctrl+C to stop.\n')
 
         with microphone:
@@ -362,14 +458,41 @@ def run(args: argparse.Namespace) -> int:
                         f"{shown_transcript}"
                     )
 
+                    normalized_command = normalize_local_command(
+                        transcript_text
+                    )
+
                     if not transcript_text:
-                        print("JARVIS: 음성을 이해하지 못했습니다.")
-                    elif (
-                        normalize_local_command(transcript_text)
-                        in _RESET_COMMANDS
-                    ):
+                        local_reply = "음성을 이해하지 못했습니다."
+                        print(f"JARVIS: {local_reply}")
+                        if tts_enabled:
+                            tts_enabled = speak_safely(
+                                synthesizer,
+                                local_reply,
+                            )
+                    elif normalized_command in _TTS_OFF_COMMANDS:
+                        local_reply = "음성 출력을 끕니다."
+                        print(f"JARVIS: {local_reply}")
+                        if tts_enabled:
+                            speak_safely(synthesizer, local_reply)
+                        tts_enabled = False
+                    elif normalized_command in _TTS_ON_COMMANDS:
+                        tts_enabled = True
+                        local_reply = "음성 출력을 켰습니다."
+                        print(f"JARVIS: {local_reply}")
+                        tts_enabled = speak_safely(
+                            synthesizer,
+                            local_reply,
+                        )
+                    elif normalized_command in _RESET_COMMANDS:
                         agent.reset_conversation()
-                        print("JARVIS: 대화 기억을 초기화했습니다.")
+                        local_reply = "대화 기억을 초기화했습니다."
+                        print(f"JARVIS: {local_reply}")
+                        if tts_enabled:
+                            tts_enabled = speak_safely(
+                                synthesizer,
+                                local_reply,
+                            )
                     else:
                         print("THINKING...", flush=True)
                         reply = agent.ask(transcript_text)
@@ -398,6 +521,11 @@ def run(args: argparse.Namespace) -> int:
                             f"tools={len(reply.tool_calls)}]:"
                         )
                         print(reply.text)
+                        if tts_enabled:
+                            tts_enabled = speak_safely(
+                                synthesizer,
+                                reply.text,
+                            )
 
                 wakeword.reset()
                 microphone.clear_pending()
@@ -419,6 +547,21 @@ def main() -> int:
     if args.list_devices:
         print(MicrophoneStream.list_devices())
         return 0
+    if args.list_tts_voices:
+        try:
+            with SpeechSynthesizer(
+                SpeechSynthesizerConfig(
+                    voice_name=args.tts_voice,
+                    rate=args.tts_rate,
+                    volume=args.tts_volume,
+                    max_characters=args.tts_max_characters,
+                )
+            ) as synthesizer:
+                print(synthesizer.format_available_voices())
+            return 0
+        except (RuntimeError, ValueError) as exc:
+            print(f"TTS setup failed: {exc}", file=sys.stderr)
+            return 1
     return run(args)
 
 
