@@ -9,7 +9,7 @@ import numpy as np
 @dataclass(frozen=True, slots=True)
 class WakeWordConfig:
     model_name: str = "hey jarvis"
-    threshold: float = 0.5
+    threshold: float = 0.45
     cooldown_seconds: float = 2.0
     warmup_seconds: float = 1.0
     sample_rate: int = 16_000

@@ -27,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="BlackShark",
         help="Preferred microphone name substring. Default: BlackShark.",
     )
-    parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument("--threshold", type=float, default=0.45)
     parser.add_argument("--cooldown", type=float, default=2.0)
     return parser
 
