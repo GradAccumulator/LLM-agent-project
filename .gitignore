@@ -9,3 +9,5 @@ __pycache__/
 logs/
 recordings/
 models/
+.env.*
+!.env.example

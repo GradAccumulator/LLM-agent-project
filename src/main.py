@@ -3,16 +3,26 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 from pathlib import Path
+import re
 import sys
 
 import numpy as np
 import sounddevice as sd
 
 from src.audio import AudioConfig, MicrophoneStream
+from src.llm import AgentConfig, JarvisAgent
 from src.speech import CaptureConfig, SpeechCapture, save_wave_file
 from src.stt import SpeechRecognizer, SpeechRecognizerConfig
 from src.vad import VoiceActivityConfig, VoiceActivityDetector
 from src.wakeword import WakeWordConfig, WakeWordDetector
+
+
+_RESET_COMMANDS = {
+    "대화초기화",
+    "기억초기화",
+    "대화리셋",
+    "컨텍스트초기화",
+}
 
 
 def parse_device(value: str) -> int | str:
@@ -25,11 +35,15 @@ def parse_language(value: str) -> str | None:
     return None if value.casefold() == "auto" else value
 
 
+def normalize_local_command(value: str) -> str:
+    return re.sub(r"[\W_]+", "", value, flags=re.UNICODE).casefold()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Detect Hey Jarvis, capture a command, and transcribe it "
-            "locally with Faster-Whisper."
+            "Detect Hey Jarvis, capture speech, transcribe it locally, "
+            "and generate a GPT response."
         )
     )
     parser.add_argument("--list-devices", action="store_true")
@@ -126,6 +140,34 @@ def build_parser() -> argparse.ArgumentParser:
         default=8,
         help="CPU threads used by CTranslate2. Default: 8.",
     )
+    parser.add_argument(
+        "--llm-model",
+        default="gpt-5.6-luna",
+        help="OpenAI model ID. Default: gpt-5.6-luna.",
+    )
+    parser.add_argument(
+        "--llm-reasoning",
+        choices=("none", "low", "medium", "high", "xhigh", "max"),
+        default="low",
+        help="Reasoning effort. Default: low.",
+    )
+    parser.add_argument(
+        "--llm-max-output-tokens",
+        type=int,
+        default=512,
+        help="Maximum LLM output tokens. Default: 512.",
+    )
+    parser.add_argument(
+        "--llm-timeout",
+        type=float,
+        default=60.0,
+        help="OpenAI API timeout in seconds. Default: 60.",
+    )
+    parser.add_argument(
+        "--no-llm-memory",
+        action="store_true",
+        help="Do not link responses across voice commands.",
+    )
     return parser
 
 
@@ -141,6 +183,17 @@ def play_detection_sound() -> None:
         winsound.MessageBeep(winsound.MB_OK)
     except (ImportError, RuntimeError):
         print("\a", end="", flush=True)
+
+
+def format_token_usage(
+    input_tokens: int | None,
+    output_tokens: int | None,
+) -> str:
+    if input_tokens is None and output_tokens is None:
+        return "tokens=?"
+    input_text = "?" if input_tokens is None else str(input_tokens)
+    output_text = "?" if output_tokens is None else str(output_tokens)
+    return f"{input_text}→{output_text} tokens"
 
 
 def run(args: argparse.Namespace) -> int:
@@ -190,7 +243,19 @@ def run(args: argparse.Namespace) -> int:
             )
         )
 
+        print(f"Connecting GPT model '{args.llm_model}'...")
+        agent = JarvisAgent(
+            AgentConfig(
+                model=args.llm_model,
+                reasoning_effort=args.llm_reasoning,
+                max_output_tokens=args.llm_max_output_tokens,
+                timeout_seconds=args.llm_timeout,
+                use_memory=not args.no_llm_memory,
+            )
+        )
+
         language_text = recognizer.language or "auto"
+        memory_text = "enabled" if not args.no_llm_memory else "disabled"
         print(f"Input device   : [{microphone.device}] {info['name']}")
         print(f"Capture rate   : {microphone.input_sample_rate} Hz")
         print("Pipeline audio : 16000 Hz / mono / int16 / 80 ms")
@@ -203,6 +268,9 @@ def run(args: argparse.Namespace) -> int:
             f"{recognizer.compute_type}"
         )
         print(f"STT language   : {language_text}")
+        print(f"LLM model      : {args.llm_model}")
+        print(f"LLM reasoning  : {args.llm_reasoning}")
+        print(f"LLM memory     : {memory_text}")
         print('Say "Hey Jarvis". Press Ctrl+C to stop.\n')
 
         with microphone:
@@ -257,13 +325,36 @@ def run(args: argparse.Namespace) -> int:
                     confidence = (
                         transcription.language_probability * 100.0
                     )
-                    transcript_text = transcription.text or "<empty>"
+                    transcript_text = transcription.text.strip()
+                    shown_transcript = transcript_text or "<empty>"
                     print(
                         f"TRANSCRIPT [{transcription.language} "
                         f"{confidence:.1f}% | "
                         f"{transcription.inference_seconds:.2f}s]: "
-                        f"{transcript_text}"
+                        f"{shown_transcript}"
                     )
+
+                    if not transcript_text:
+                        print("JARVIS: 음성을 이해하지 못했습니다.")
+                    elif (
+                        normalize_local_command(transcript_text)
+                        in _RESET_COMMANDS
+                    ):
+                        agent.reset_conversation()
+                        print("JARVIS: 대화 기억을 초기화했습니다.")
+                    else:
+                        print("THINKING...", flush=True)
+                        reply = agent.ask(transcript_text)
+                        usage_text = format_token_usage(
+                            reply.input_tokens,
+                            reply.output_tokens,
+                        )
+                        print(
+                            f"JARVIS [{reply.model} | "
+                            f"{reply.elapsed_seconds:.2f}s | "
+                            f"{usage_text}]:"
+                        )
+                        print(reply.text)
 
                 wakeword.reset()
                 microphone.clear_pending()
