@@ -57,6 +57,12 @@ class WakeWordDetector:
     def loaded_model_name(self) -> str:
         return self._model_key
 
+    def reset(self) -> None:
+        reset = getattr(self._model, "reset", None)
+        if callable(reset):
+            reset()
+        self._samples_seen = 0
+
     def predict(self, samples: np.ndarray) -> DetectionResult:
         predictions = self._model.predict(samples)
         score = float(predictions.get(self._model_key, 0.0))

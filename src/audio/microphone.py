@@ -263,6 +263,17 @@ class MicrophoneStream:
         except Empty as exc:
             raise TimeoutError("No microphone frame arrived in time.") from exc
 
+    def clear_pending(self) -> int:
+        """Discard queued frames and return the number of removed frames."""
+
+        removed = 0
+        while True:
+            try:
+                self._frames.get_nowait()
+            except Empty:
+                return removed
+            removed += 1
+
     def close(self) -> None:
         stream = self._stream
         self._stream = None
