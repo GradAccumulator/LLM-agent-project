@@ -1,5 +1,34 @@
 # LLM Agent — Step 18: Persistent Reminders and Recurring Tasks
 
+## Step 18.1.1 — 텍스트 입력 비활성 타이머
+
+연속 대화의 12초 제한을 고정된 전체 시간에서 **마지막 키보드 입력 이후의
+비활성 시간**으로 변경했습니다.
+
+```text
+FOLLOW-UP 시작
+→ 8초 뒤 첫 글자 입력
+→ 타이머 다시 12초
+→ 다음 글자 입력
+→ 다시 12초
+→ Enter
+→ 즉시 텍스트 명령 처리
+```
+
+따라서 긴 문장을 입력하는 도중에는 시간이 지나도 끊기지 않습니다. 마지막
+글자 이후 음성·키보드 입력이 모두 12초 동안 없을 때만 호출어 대기 상태로
+돌아갑니다.
+
+Windows CMD에서는 첫 글자를 상호작용 키로 소비하지 않고 직접 입력 버퍼에
+추가합니다. 한글 입력도 첫 글자부터 보존됩니다.
+
+정상 안내 문구:
+
+```text
+FOLLOW-UP: listening for 12.0s.
+Typing resets the 12.0s inactivity timer.
+```
+
 ## Step 18.1 — 음성·텍스트 통합 입력과 문장별 출력
 
 별도의 채팅 모드 전환 없이 `python -m src.main`을 실행한 같은 CMD 창에서
@@ -38,7 +67,7 @@ JARVIS | 1/3 | 첫 번째 문장입니다.
 ### 커밋 메시지
 
 ```bash
-git commit -m "Add unified console text input and numbered reply formatting"
+git commit -m "Reset follow-up timeout on keyboard activity"
 ```
 
 ### 다음 단계

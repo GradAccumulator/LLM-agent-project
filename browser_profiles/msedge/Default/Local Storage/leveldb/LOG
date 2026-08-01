@@ -1,3 +1,2 @@
-2026/08/01-11:43:34.297 5904 Reusing MANIFEST C:\Users\LEEJUHYOUNG\Documents\LLM agent project\browser_profiles\msedge\Default\Local Storage\leveldb/MANIFEST-000001
-2026/08/01-11:43:34.301 5904 Recovering log #3
-2026/08/01-11:43:34.302 5904 Reusing old log C:\Users\LEEJUHYOUNG\Documents\LLM agent project\browser_profiles\msedge\Default\Local Storage\leveldb/000003.log 
+2026/08/02-05:25:46.099 a574 Creating DB C:\Users\GIGABYTE\Documents\llm_agent\LLM-agent-project\browser_profiles\msedge\Default\Local Storage\leveldb since it was missing.
+2026/08/02-05:25:46.133 a574 Reusing MANIFEST C:\Users\GIGABYTE\Documents\llm_agent\LLM-agent-project\browser_profiles\msedge\Default\Local Storage\leveldb/MANIFEST-000001

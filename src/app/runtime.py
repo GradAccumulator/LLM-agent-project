@@ -649,6 +649,9 @@ class VoiceAssistantRuntime:
             should_cancel=(
                 self.console_input.has_pending
             ),
+            start_timeout_activity=(
+                lambda: self.console_input.activity_sequence
+            ),
         )
 
     def _capture_followup(self) -> CaptureResult:
@@ -659,6 +662,9 @@ class VoiceAssistantRuntime:
             on_speech_start=self._on_speech_start,
             should_cancel=(
                 self.console_input.has_pending
+            ),
+            start_timeout_activity=(
+                lambda: self.console_input.activity_sequence
             ),
         )
 

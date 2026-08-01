@@ -118,6 +118,9 @@ class SpeechCapture:
         start_timeout_seconds: float | None = None,
         on_speech_start: Callable[[], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
+        start_timeout_activity: (
+            Callable[[], int] | None
+        ) = None,
     ) -> CaptureResult:
         self.detector.reset()
 
@@ -140,12 +143,33 @@ class SpeechCapture:
 
         captured: list[np.ndarray] = []
         elapsed_seconds = 0.0
+        activity_sequence = (
+            start_timeout_activity()
+            if start_timeout_activity is not None
+            else None
+        )
         speech_seconds = 0.0
         silence_seconds = 0.0
         speech_started = False
         peak_probability = 0.0
 
         while True:
+            if start_timeout_activity is not None:
+                current_activity = (
+                    start_timeout_activity()
+                )
+                if current_activity != activity_sequence:
+                    activity_sequence = current_activity
+                    elapsed_seconds = 0.0
+
+            if start_timeout_activity is not None:
+                current_activity = (
+                    start_timeout_activity()
+                )
+                if current_activity != activity_sequence:
+                    activity_sequence = current_activity
+                    elapsed_seconds = 0.0
+
             if should_cancel is not None and should_cancel():
                 return CaptureResult(
                     samples=np.empty(0, dtype=np.int16),
