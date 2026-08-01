@@ -46,6 +46,23 @@ class AgentStateMachineTests(unittest.TestCase):
             machine.transition(state, reason='test')
         self.assertEqual(machine.current, AgentState.SLEEPING)
 
+    def test_speaking_can_be_interrupted(self) -> None:
+        machine = AgentStateMachine()
+        for state in (
+            AgentState.SLEEPING,
+            AgentState.AWAITING_SPEECH,
+            AgentState.CAPTURING,
+            AgentState.TRANSCRIBING,
+            AgentState.THINKING,
+            AgentState.SPEAKING,
+            AgentState.CAPTURING,
+        ):
+            machine.transition(state, reason='test')
+        self.assertEqual(
+            machine.current,
+            AgentState.CAPTURING,
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -3,6 +3,10 @@ from __future__ import annotations
 import argparse
 
 from src.audio import AudioConfig, MicrophoneStream
+from src.bargein import (
+    BargeInConfig,
+    BargeInMonitor,
+)
 from src.browser import BrowserAutomationConfig
 from src.conversation import ConversationConfig, ConversationSession
 from src.fastpath import FastPathConfig, LocalCommandRouter
@@ -127,6 +131,31 @@ def build_runtime(
             ),
         ),
         detector=vad,
+    )
+
+    print("Loading barge-in VAD...")
+    barge_in_detector = VoiceActivityDetector(
+        VoiceActivityConfig(
+            threshold=args.barge_in_vad_threshold
+        )
+    )
+    barge_in = BargeInMonitor(
+        BargeInConfig(
+            enabled=args.barge_in_enabled,
+            grace_seconds=args.barge_in_grace,
+            trigger_speech_seconds=(
+                args.barge_in_trigger_speech
+            ),
+            end_silence_seconds=(
+                args.barge_in_end_silence
+            ),
+            max_utterance_seconds=(
+                args.barge_in_max_utterance
+            ),
+            pre_roll_seconds=args.barge_in_pre_roll,
+            minimum_rms=args.barge_in_minimum_rms,
+        ),
+        detector=barge_in_detector,
     )
 
     print(
@@ -373,6 +402,15 @@ def build_runtime(
         f"{'enabled' if args.fast_path_enabled and args.tools_enabled else 'disabled'}"
     )
     print(
+        f"Barge-in       : "
+        f"{'enabled' if args.barge_in_enabled else 'disabled'}"
+    )
+    print(
+        f"Barge-in VAD   : "
+        f"{args.barge_in_vad_threshold:.2f} "
+        f"for {args.barge_in_trigger_speech:.2f}s"
+    )
+    print(
         f"State logging  : "
         f"{'visible' if args.show_state_transitions else 'hidden'}"
     )
@@ -431,4 +469,5 @@ def build_runtime(
         metrics=metrics,
         conversation=conversation,
         fast_router=fast_router,
+        barge_in=barge_in,
     )

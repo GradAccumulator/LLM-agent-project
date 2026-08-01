@@ -335,6 +335,54 @@ def build_parser(
 
     _bool_pair(
         parser,
+        destination="barge_in_enabled",
+        positive=("--barge-in",),
+        negative=("--disable-barge-in",),
+        positive_help=(
+            "Allow the user to interrupt spoken responses."
+        ),
+        negative_help=(
+            "Do not listen for interruptions during TTS."
+        ),
+    )
+    parser.add_argument(
+        "--barge-in-vad-threshold",
+        type=float,
+        default=0.78,
+    )
+    parser.add_argument(
+        "--barge-in-grace",
+        type=float,
+        default=0.65,
+    )
+    parser.add_argument(
+        "--barge-in-trigger-speech",
+        type=float,
+        default=0.32,
+    )
+    parser.add_argument(
+        "--barge-in-end-silence",
+        type=float,
+        default=0.48,
+    )
+    parser.add_argument(
+        "--barge-in-max-utterance",
+        type=float,
+        default=12.0,
+    )
+    parser.add_argument(
+        "--barge-in-pre-roll",
+        type=float,
+        default=0.24,
+    )
+    parser.add_argument(
+        "--barge-in-minimum-rms",
+        type=float,
+        default=0.008,
+    )
+
+    _bool_pair(
+        parser,
         destination="show_state_transitions",
         positive=("--state-transitions",),
         negative=("--hide-state-transitions",),
@@ -386,6 +434,7 @@ def build_parser(
         browser_automation=True,
         browser_headless=False,
         fast_path_enabled=True,
+        barge_in_enabled=True,
         show_state_transitions=True,
         metrics_enabled=True,
         metrics_include_text=False,

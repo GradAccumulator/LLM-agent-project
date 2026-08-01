@@ -11,6 +11,7 @@ from uuid import uuid4
 import numpy as np
 
 from src.audio import MicrophoneStream
+from src.bargein import BargeInMonitor
 from src.conversation import ConversationSession
 from src.core import AgentState, AgentStateMachine, StateTransition
 from src.fastpath import LocalCommandRouter
@@ -103,6 +104,7 @@ class VoiceAssistantRuntime:
         metrics: JsonlMetricsLogger,
         conversation: ConversationSession,
         fast_router: LocalCommandRouter,
+        barge_in: BargeInMonitor,
         state_machine: AgentStateMachine | None = None,
     ) -> None:
         if config.recovery_delay_seconds < 0:
@@ -117,9 +119,11 @@ class VoiceAssistantRuntime:
         self.metrics = metrics
         self.conversation = conversation
         self.fast_router = fast_router
+        self.barge_in = barge_in
         self.state = state_machine or AgentStateMachine()
         self.tts_enabled = config.tts_enabled
         self._active_command: _CommandTrace | None = None
+        self._pending_barge_in_capture = None
         if config.show_state_transitions:
             self.state.add_listener(self._print_state_transition)
         if metrics.enabled:
@@ -214,47 +218,172 @@ class VoiceAssistantRuntime:
         })
 
     def _after_turn(self, *, outcome: str) -> None:
+        pending_barge_in = self._pending_barge_in_capture
+        self._pending_barge_in_capture = None
+
         self._finish_command(outcome)
         completed_turn = self.conversation.complete_turn()
+        snapshot = self.conversation.snapshot()
         self.metrics.log('conversation_turn_completed', data={
             'conversation_id': self.conversation.session_id,
             'turn_index': completed_turn,
-            'remaining_turns': self.conversation.snapshot().remaining_turns,
+            'remaining_turns': snapshot.remaining_turns,
         })
-        if self.conversation.can_accept_followup:
-            self._continue_conversation(reason='awaiting follow-up command')
+
+        if pending_barge_in is not None and snapshot.remaining_turns > 0:
+            self._start_command(
+                wake_score=None,
+                wakeword_required=False,
+            )
+            if self._active_command is not None:
+                self._active_command.capture_audio_seconds = (
+                    pending_barge_in.duration_seconds
+                )
+            self.metrics.log(
+                'barge_in_command_started',
+                data={
+                    'conversation_id': self.conversation.session_id,
+                    'turn_index': self.conversation.next_turn_index,
+                    'duration_seconds': pending_barge_in.duration_seconds,
+                    'peak_probability': pending_barge_in.peak_probability,
+                },
+            )
+            print('BARGE-IN: processing the interruption now.')
+            self._process_capture(pending_barge_in)
             return
+
+        if self.conversation.can_accept_followup:
+            self._continue_conversation(
+                reason='awaiting follow-up command'
+            )
+            return
+
         reason = (
             'continuous conversation disabled'
             if not self.conversation.config.enabled
             else 'maximum turns reached'
         )
-        self._return_to_sleep(reason=reason, conversation_end_reason=reason)
+        self._return_to_sleep(
+            reason=reason,
+            conversation_end_reason=reason,
+        )
+
+    def _on_barge_in_trigger(self) -> None:
+        self.synthesizer.stop()
+        if self.state.current is AgentState.SPEAKING:
+            self._transition(
+                AgentState.CAPTURING,
+                'user interrupted TTS',
+            )
+        print('\nBARGE-IN: voice detected, stopping TTS...')
 
     def _speak(self, text: str) -> bool:
-        self._transition(AgentState.SPEAKING, 'speaking response')
+        self._transition(
+            AgentState.SPEAKING,
+            'speaking response',
+        )
+        monitor_started = False
+        self._pending_barge_in_capture = None
+
         try:
+            if self.barge_in.config.enabled:
+                self.microphone.clear_pending()
+                self.barge_in.start(
+                    self.microphone,
+                    on_trigger=self._on_barge_in_trigger,
+                )
+                monitor_started = True
+
             self.synthesizer.speak(text)
             timing = self.synthesizer.last_timing
+
+            if monitor_started:
+                if self.barge_in.triggered:
+                    wait_timeout = (
+                        self.barge_in.config.max_utterance_seconds
+                        + self.barge_in.config.end_silence_seconds
+                        + 2.0
+                    )
+                    result = self.barge_in.wait_for_result(
+                        timeout=wait_timeout
+                    )
+                    if result is None:
+                        self.barge_in.stop(timeout=1.0)
+                        raise RuntimeError(
+                            'Barge-in capture did not finish in time.'
+                        )
+                    self._pending_barge_in_capture = (
+                        result.capture
+                    )
+                    self.metrics.log(
+                        'barge_in_captured',
+                        data={
+                            'command_id': (
+                                self._active_command.command_id
+                                if self._active_command
+                                else None
+                            ),
+                            'conversation_id': (
+                                self.conversation.session_id
+                            ),
+                            'trigger_latency_seconds': (
+                                result.trigger_latency_seconds
+                            ),
+                            'duration_seconds': (
+                                result.capture.duration_seconds
+                            ),
+                            'peak_probability': (
+                                result.capture.peak_probability
+                            ),
+                            'end_reason': (
+                                result.capture.end_reason
+                            ),
+                        },
+                    )
+                else:
+                    self.barge_in.stop(timeout=1.0)
+
             trace = self._active_command
             if trace is not None:
-                trace.tts_first_audio_seconds = timing.first_audio_seconds
+                trace.tts_first_audio_seconds = (
+                    timing.first_audio_seconds
+                )
                 trace.tts_total_seconds = timing.total_seconds
+
             self.metrics.log('tts_completed', data={
-                'command_id': trace.command_id if trace is not None else None,
+                'command_id': (
+                    trace.command_id
+                    if trace is not None
+                    else None
+                ),
                 'conversation_id': self.conversation.session_id,
                 'first_audio_seconds': timing.first_audio_seconds,
                 'chunks': timing.chunks,
+                'requested_chunks': timing.requested_chunks,
                 'total_seconds': timing.total_seconds,
+                'interrupted': timing.interrupted,
             })
             print(
-                f'TTS LATENCY: first_audio={timing.first_audio_seconds:.2f}s '
-                f'| chunks={timing.chunks} | total={timing.total_seconds:.2f}s'
+                f'TTS LATENCY: first_audio='
+                f'{timing.first_audio_seconds:.2f}s '
+                f'| chunks={timing.chunks}/'
+                f'{timing.requested_chunks} '
+                f'| total={timing.total_seconds:.2f}s '
+                f'| interrupted={timing.interrupted}'
             )
             return True
         except RuntimeError as exc:
+            if monitor_started:
+                try:
+                    self.barge_in.stop(timeout=1.0)
+                except RuntimeError:
+                    pass
             self.metrics.log('tts_failed', data={
-                'command_id': self._active_command.command_id if self._active_command else None,
+                'command_id': (
+                    self._active_command.command_id
+                    if self._active_command
+                    else None
+                ),
                 'error_type': type(exc).__name__,
                 'error': str(exc),
             })
@@ -495,6 +624,7 @@ class VoiceAssistantRuntime:
         transcript_text = self._print_transcription(transcription)
         local_result = self._handle_local_command(transcript_text)
         if local_result == 'end_session':
+            self._pending_barge_in_capture = None
             self._finish_command('session_end_command')
             self.conversation.complete_turn()
             self._return_to_sleep(
@@ -549,6 +679,9 @@ class VoiceAssistantRuntime:
             'error_type': type(error).__name__,
             'error': message,
         })
+        self.synthesizer.stop()
+        self.barge_in.stop(timeout=1.0)
+        self._pending_barge_in_capture = None
         self._finish_command('error')
         self._end_conversation('runtime_error')
         if self.state.current is not AgentState.ERROR:
@@ -582,14 +715,20 @@ class VoiceAssistantRuntime:
         finally:
             self._finish_command('stopped')
             self._end_conversation('runtime_stopped')
+            self.synthesizer.stop()
             try:
-                self.agent.close()
+                self.barge_in.close()
             finally:
                 try:
-                    self.synthesizer.close()
+                    self.agent.close()
                 finally:
                     try:
-                        self.state.stop(reason='runtime exited')
+                        self.synthesizer.close()
                     finally:
-                        self.metrics.close()
+                        try:
+                            self.state.stop(
+                                reason='runtime exited'
+                            )
+                        finally:
+                            self.metrics.close()
         return 0

@@ -181,6 +181,30 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
     "fast_path": {
         "enabled": _SettingSpec("fast_path_enabled", bool),
     },
+    "barge_in": {
+        "enabled": _SettingSpec("barge_in_enabled", bool),
+        "vad_threshold": _SettingSpec(
+            "barge_in_vad_threshold", (int, float), _as_float
+        ),
+        "grace_seconds": _SettingSpec(
+            "barge_in_grace", (int, float), _as_float
+        ),
+        "trigger_speech_seconds": _SettingSpec(
+            "barge_in_trigger_speech", (int, float), _as_float
+        ),
+        "end_silence_seconds": _SettingSpec(
+            "barge_in_end_silence", (int, float), _as_float
+        ),
+        "max_utterance_seconds": _SettingSpec(
+            "barge_in_max_utterance", (int, float), _as_float
+        ),
+        "pre_roll_seconds": _SettingSpec(
+            "barge_in_pre_roll", (int, float), _as_float
+        ),
+        "minimum_rms": _SettingSpec(
+            "barge_in_minimum_rms", (int, float), _as_float
+        ),
+    },
     "runtime": {
         "show_state_transitions": _SettingSpec(
             "show_state_transitions", bool
@@ -312,7 +336,11 @@ def _validate_and_map(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate_values(values: dict[str, Any]) -> None:
-    for name in ("wake_threshold", "vad_threshold"):
+    for name in (
+        "wake_threshold",
+        "vad_threshold",
+        "barge_in_vad_threshold",
+    ):
         if name in values and not 0.0 < values[name] < 1.0:
             raise ConfigError(
                 f"{name} must be between 0 and 1."
@@ -341,6 +369,10 @@ def _validate_values(values: dict[str, Any]) -> None:
         "browser_navigation_timeout",
         "browser_action_timeout",
         "browser_max_page_text",
+        "barge_in_trigger_speech",
+        "barge_in_end_silence",
+        "barge_in_max_utterance",
+        "barge_in_pre_roll",
     }
     for name in positive:
         if name in values and values[name] <= 0:
@@ -349,6 +381,15 @@ def _validate_values(values: dict[str, Any]) -> None:
     if values.get("recovery_delay", 0.0) < 0:
         raise ConfigError(
             "recovery_delay must not be negative."
+        )
+
+    if values.get("barge_in_grace", 0.0) < 0:
+        raise ConfigError(
+            "barge_in_grace must not be negative."
+        )
+    if values.get("barge_in_minimum_rms", 0.0) < 0:
+        raise ConfigError(
+            "barge_in_minimum_rms must not be negative."
         )
 
     choices: dict[str, set[str]] = {

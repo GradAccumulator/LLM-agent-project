@@ -41,3 +41,10 @@ headless = false
 
 [fast_path]
 enabled = true
+
+
+[barge_in]
+enabled = true
+vad_threshold = 0.78
+trigger_speech_seconds = 0.32
+minimum_rms = 0.008
