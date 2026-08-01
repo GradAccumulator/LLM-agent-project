@@ -1,22 +1,107 @@
+# =========================================================
+# Python
+# =========================================================
 .venv/
 __pycache__/
 *.py[cod]
+*$py.class
+
+# =========================================================
+# Python caches
+# =========================================================
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.cache/
+
+# =========================================================
+# IDE
+# =========================================================
 .vscode/
+.idea/
+
+# =========================================================
+# Environment
+# =========================================================
 .env
-logs/
-recordings/
-models/
 .env.*
 !.env.example
-notes/
+
+# =========================================================
+# Runtime data
+# =========================================================
+logs/
+recordings/
 screenshots/
+notes/
+temp/
+tmp/
+cache/
+
+# =========================================================
+# AI models (local downloads)
+# =========================================================
+models/
+
+# =========================================================
+# User configuration
+# =========================================================
 config/user.toml
+
+# =========================================================
+# Browser profiles
+# =========================================================
 browser_profile/
+browser_profiles/
+
+# Chromium / Edge profile runtime files
+Local State
+Preferences
+Secure Preferences
+History*
+Favicons*
+Web Data*
+Login Data*
+Cookies*
+Visited Links
+Network/
+Sessions/
+Session Storage/
+GPUCache/
+Code Cache/
+Service Worker/
+Crashpad/
+DawnCache/
+ShaderCache/
+GrShaderCache/
+BrowserMetrics-*
+InterestGroups
+first_party_sets.db
+load_statistics.db
+settings.dat
+
+# =========================================================
+# Playwright
+# =========================================================
 playwright-report/
 test-results/
+
+# =========================================================
+# Databases
+# =========================================================
 data/*.db
-data/*.db-wal
-data/*.db-shm
+data/*.db-*
+data/*.sqlite
+data/*.sqlite3
+
+# =========================================================
+# Logs
+# =========================================================
+*.log
+
+# =========================================================
+# OS
+# =========================================================
+.DS_Store
+Thumbs.db
+desktop.ini
