@@ -5,6 +5,7 @@ end_silence_seconds = 0.4
 max_command_seconds = 15.0
 save_audio = true
 save_directory = "recordings"
+max_saved_files = 5
 
 [wakeword]
 threshold = 0.45

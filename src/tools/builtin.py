@@ -11,6 +11,15 @@ from urllib.parse import quote_plus
 import webbrowser
 
 from .registry import ToolRegistry, ToolSpec
+from .windows_desktop import (
+    focus_window,
+    get_active_window,
+    get_clipboard_text,
+    list_open_windows,
+    media_control,
+    set_clipboard_text,
+    set_window_state,
+)
 
 
 _APPLICATION_IDS = (
@@ -467,6 +476,156 @@ def build_default_tool_registry() -> ToolRegistry:
                 "additionalProperties": False,
             },
             handler=inspect_screen,
+        )
+    )
+
+
+    registry.register(
+        ToolSpec(
+            name="get_active_window",
+            description=(
+                "현재 Windows에서 사용자가 보고 있는 활성 창의 제목, "
+                "프로세스와 창 ID를 조회한다."
+            ),
+            parameters=_empty_parameters(),
+            handler=get_active_window,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="list_open_windows",
+            description=(
+                "현재 보이는 Windows 창 목록을 조회한다. 창 전환이나 "
+                "최소화·최대화 전에 window_id를 찾을 때 사용한다."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "title_contains": {
+                        "type": "string",
+                        "description": (
+                            "창 제목 필터. 전체 목록은 빈 문자열을 사용한다."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "description": "반환할 최대 창 수",
+                    },
+                },
+                "required": ["title_contains", "limit"],
+                "additionalProperties": False,
+            },
+            handler=list_open_windows,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="focus_window",
+            description=(
+                "사용자가 명시적으로 요청한 기존 Windows 창을 앞으로 "
+                "가져온다. list_open_windows가 반환한 window_id만 사용한다."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "window_id": {
+                        "type": "integer",
+                        "description": "대상 창의 window_id",
+                    }
+                },
+                "required": ["window_id"],
+                "additionalProperties": False,
+            },
+            handler=focus_window,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="set_window_state",
+            description=(
+                "사용자가 명시적으로 요청한 Windows 창을 최소화, 최대화 "
+                "또는 복원한다."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "window_id": {
+                        "type": "integer",
+                        "description": "대상 창의 window_id",
+                    },
+                    "state": {
+                        "type": "string",
+                        "enum": ["minimize", "maximize", "restore"],
+                    },
+                },
+                "required": ["window_id", "state"],
+                "additionalProperties": False,
+            },
+            handler=set_window_state,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="media_control",
+            description=(
+                "사용자가 명시적으로 요청했을 때 재생·일시정지, 다음 곡, "
+                "이전 곡, 정지 또는 시스템 음량 키를 누른다."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": [
+                            "play_pause",
+                            "next_track",
+                            "previous_track",
+                            "stop",
+                            "volume_up",
+                            "volume_down",
+                            "mute",
+                        ],
+                    }
+                },
+                "required": ["action"],
+                "additionalProperties": False,
+            },
+            handler=media_control,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="get_clipboard_text",
+            description=(
+                "사용자가 클립보드 내용을 읽어 달라고 명시적으로 요청한 "
+                "경우에만 현재 텍스트를 조회한다."
+            ),
+            parameters=_empty_parameters(),
+            handler=get_clipboard_text,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="set_clipboard_text",
+            description=(
+                "사용자가 명시적으로 복사를 요청한 텍스트를 Windows "
+                "클립보드에 넣는다. 임의로 클립보드를 덮어쓰지 않는다."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "maxLength": 10000,
+                        "description": "클립보드에 저장할 텍스트",
+                    }
+                },
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+            handler=set_clipboard_text,
         )
     )
 

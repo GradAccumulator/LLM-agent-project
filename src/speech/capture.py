@@ -33,14 +33,49 @@ class CaptureResult:
     end_reason: str
 
 
+def prune_wave_files(
+    directory: str | Path,
+    max_files: int = 5,
+) -> tuple[Path, ...]:
+    """Delete old command recordings but leave unrelated WAV files."""
+    if max_files <= 0:
+        raise ValueError("max_files must be positive.")
+
+    output_directory = Path(directory)
+    if not output_directory.is_dir():
+        return ()
+
+    candidates = [
+        path
+        for path in output_directory.glob("command_*.wav")
+        if path.is_file()
+    ]
+    candidates.sort(
+        key=lambda path: (path.stat().st_mtime_ns, path.name),
+        reverse=True,
+    )
+
+    deleted: list[Path] = []
+    for path in candidates[max_files:]:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            continue
+        deleted.append(path)
+    return tuple(deleted)
+
+
 def save_wave_file(
     samples: np.ndarray,
     directory: str | Path,
     sample_rate: int = 16_000,
+    max_saved_files: int = 5,
 ) -> Path:
+    if max_saved_files <= 0:
+        raise ValueError("max_saved_files must be positive.")
+
     output_directory = Path(directory)
     output_directory.mkdir(parents=True, exist_ok=True)
-
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     output_path = output_directory / f"command_{timestamp}.wav"
 
@@ -48,8 +83,11 @@ def save_wave_file(
         file.setnchannels(1)
         file.setsampwidth(2)
         file.setframerate(sample_rate)
-        file.writeframes(np.ascontiguousarray(samples, dtype=np.int16).tobytes())
+        file.writeframes(
+            np.ascontiguousarray(samples, dtype=np.int16).tobytes()
+        )
 
+    prune_wave_files(output_directory, max_files=max_saved_files)
     return output_path
 
 

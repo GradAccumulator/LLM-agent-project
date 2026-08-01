@@ -111,6 +111,12 @@ def build_parser(
         type=Path,
         default=Path("recordings"),
     )
+    parser.add_argument(
+        "--max-saved-audio-files",
+        type=int,
+        default=5,
+        help="Keep only the newest command WAV files. Default: 5.",
+    )
     _bool_pair(
         parser,
         destination="save_audio",

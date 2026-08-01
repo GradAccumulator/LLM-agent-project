@@ -6,7 +6,11 @@ from src.audio import AudioConfig, MicrophoneStream
 from src.conversation import ConversationConfig, ConversationSession
 from src.llm import AgentConfig, JarvisAgent
 from src.metrics import JsonlMetricsLogger, MetricsConfig
-from src.speech import CaptureConfig, SpeechCapture
+from src.speech import (
+    CaptureConfig,
+    SpeechCapture,
+    prune_wave_files,
+)
 from src.stt import (
     SpeechRecognizer,
     SpeechRecognizerConfig,
@@ -72,6 +76,17 @@ def print_tts_voices(
 def build_runtime(
     args: argparse.Namespace,
 ) -> VoiceAssistantRuntime:
+    if args.save_audio:
+        deleted_recordings = prune_wave_files(
+            args.save_dir,
+            max_files=args.max_saved_audio_files,
+        )
+        if deleted_recordings:
+            print(
+                f"Audio retention: deleted "
+                f"{len(deleted_recordings)} old recording(s)."
+            )
+
     microphone = MicrophoneStream(
         AudioConfig(
             device=args.device,
@@ -213,6 +228,10 @@ def build_runtime(
     )
 
     print(
+        f"Audio files    : keep newest "
+        f"{args.max_saved_audio_files}"
+    )
+    print(
         f"Input device   : "
         f"[{microphone.device}] "
         f"{info['name']}"
@@ -352,6 +371,9 @@ def build_runtime(
         config=RuntimeConfig(
             save_audio=args.save_audio,
             save_directory=args.save_dir,
+            max_saved_audio_files=(
+                args.max_saved_audio_files
+            ),
             tts_enabled=args.tts_enabled,
             show_state_transitions=(
                 args.show_state_transitions

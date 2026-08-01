@@ -40,6 +40,7 @@ _TTS_ON_COMMANDS = {
 class RuntimeConfig:
     save_audio: bool = True
     save_directory: Path = Path('recordings')
+    max_saved_audio_files: int = 5
     tts_enabled: bool = True
     show_state_transitions: bool = True
     recovery_delay_seconds: float = 0.25
@@ -351,7 +352,11 @@ class VoiceAssistantRuntime:
             f'| peak VAD={capture.peak_probability:.3f} | end={capture.end_reason}'
         )
         if self.config.save_audio:
-            output_path = save_wave_file(capture.samples, directory=self.config.save_directory)
+            output_path = save_wave_file(
+                capture.samples,
+                directory=self.config.save_directory,
+                max_saved_files=self.config.max_saved_audio_files,
+            )
             print(f'Saved: {output_path}')
 
     @staticmethod

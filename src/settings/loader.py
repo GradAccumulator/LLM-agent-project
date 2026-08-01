@@ -76,6 +76,9 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
         "save_directory": _SettingSpec(
             "save_dir", str, _as_path
         ),
+        "max_saved_files": _SettingSpec(
+            "max_saved_audio_files", int, _as_int
+        ),
     },
     "wakeword": {
         "threshold": _SettingSpec(
@@ -313,6 +316,7 @@ def _validate_values(values: dict[str, Any]) -> None:
         "tts_chunk_characters",
         "tts_parallel_requests",
         "tts_mixer_buffer",
+        "max_saved_audio_files",
         "followup_timeout",
         "max_conversation_turns",
     }

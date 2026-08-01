@@ -3,6 +3,7 @@
 [audio]
 preferred_device = "BlackShark"
 end_silence_seconds = 0.4
+max_saved_files = 5
 
 [wakeword]
 threshold = 0.45
