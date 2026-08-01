@@ -9,6 +9,7 @@ from src.bargein import (
 )
 from src.browser import BrowserAutomationConfig
 from src.conversation import ConversationConfig, ConversationSession
+from src.console_io import ConsoleTextInput
 from src.fastpath import FastPathConfig, LocalCommandRouter
 from src.llm import AgentConfig, JarvisAgent
 from src.memory import (
@@ -16,6 +17,12 @@ from src.memory import (
     MemoryStoreConfig,
 )
 from src.metrics import JsonlMetricsLogger, MetricsConfig
+from src.scheduler import (
+    ReminderScheduler,
+    ReminderSchedulerConfig,
+    SchedulerStore,
+    SchedulerStoreConfig,
+)
 from src.speech import (
     CaptureConfig,
     SpeechCapture,
@@ -218,6 +225,22 @@ def build_runtime(
             args.browser_max_page_text
         ),
     )
+    scheduler_store = SchedulerStore(
+        SchedulerStoreConfig(
+            enabled=args.scheduler_enabled,
+            database=args.scheduler_database,
+            max_tasks=args.scheduler_max_tasks,
+            max_message_characters=args.scheduler_max_message_characters,
+        )
+    )
+    reminder_scheduler = ReminderScheduler(
+        scheduler_store,
+        ReminderSchedulerConfig(
+            enabled=args.scheduler_enabled,
+            poll_interval_seconds=args.scheduler_poll_interval,
+        ),
+    )
+
     memory_store = LocalMemoryStore(
         MemoryStoreConfig(
             enabled=args.long_term_memory_enabled,
@@ -236,6 +259,7 @@ def build_runtime(
         browser_config=browser_config,
         browser_control_mode=args.browser_control_mode,
         memory_store=memory_store,
+        scheduler_store=scheduler_store,
     )
     fast_router = LocalCommandRouter(
         tool_registry,
@@ -296,6 +320,8 @@ def build_runtime(
     synthesizer = SpeechSynthesizer(
         _tts_config(args)
     )
+
+    console_input = ConsoleTextInput()
 
     conversation = ConversationSession(
         ConversationConfig(
@@ -427,6 +453,15 @@ def build_runtime(
         f"{'enabled' if args.tts_enabled else 'disabled'}"
     )
     print(
+        f"Scheduler      : {'enabled' if args.scheduler_enabled else 'disabled'}"
+    )
+    print(
+        f"Reminder DB    : {args.scheduler_database} ({scheduler_store.count_active()} active)"
+    )
+    print(
+        f"Reminder TTS   : {'enabled' if args.scheduler_announce_tts else 'disabled'}"
+    )
+    print(
         f"Long memory   : "
         f"{'enabled' if args.long_term_memory_enabled else 'disabled'}"
     )
@@ -451,6 +486,10 @@ def build_runtime(
         f"Stream chunks  : "
         f"min={args.streaming_minimum_characters}, "
         f"max={args.streaming_maximum_characters}"
+    )
+    print(
+        "Console input  : enabled "
+        "(type and press Enter; text replies are silent)"
     )
     print(
         f"Conversation   : "
@@ -531,6 +570,8 @@ def build_runtime(
                 args.max_saved_audio_files
             ),
             tts_enabled=args.tts_enabled,
+            scheduler_announce_tts=args.scheduler_announce_tts,
+            scheduler_max_announcements=args.scheduler_max_announcements,
             streaming_enabled=(
                 args.streaming_enabled
             ),
@@ -557,4 +598,6 @@ def build_runtime(
         conversation=conversation,
         fast_router=fast_router,
         barge_in=barge_in,
+        scheduler=reminder_scheduler,
+        console_input=console_input,
     )

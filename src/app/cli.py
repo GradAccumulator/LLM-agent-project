@@ -67,6 +67,11 @@ def build_parser(
         help="List saved local aliases and preferences.",
     )
     parser.add_argument(
+        "--list-reminders",
+        action="store_true",
+        help="List reminders stored in the scheduler database.",
+    )
+    parser.add_argument(
         "--list-browsers",
         action="store_true",
         help=(
@@ -300,6 +305,28 @@ def build_parser(
         type=int,
         default=256,
     )
+
+    _bool_pair(
+        parser,
+        destination="scheduler_enabled",
+        positive=("--scheduler",),
+        negative=("--disable-scheduler",),
+        positive_help="Enable persistent reminders.",
+        negative_help="Disable reminders.",
+    )
+    parser.add_argument("--scheduler-database", type=Path, default=Path("data/jarvis_tasks.db"))
+    parser.add_argument("--scheduler-poll-interval", type=float, default=0.5)
+    parser.add_argument("--scheduler-max-tasks", type=int, default=200)
+    parser.add_argument("--scheduler-max-message-characters", type=int, default=500)
+    _bool_pair(
+        parser,
+        destination="scheduler_announce_tts",
+        positive=("--scheduler-tts",),
+        negative=("--scheduler-no-tts",),
+        positive_help="Speak due reminders.",
+        negative_help="Do not speak due reminders.",
+    )
+    parser.add_argument("--scheduler-max-announcements", type=int, default=3)
 
     _bool_pair(
         parser,
@@ -581,6 +608,8 @@ def build_parser(
         llm_memory=True,
         tools_enabled=True,
         tts_enabled=True,
+        scheduler_enabled=True,
+        scheduler_announce_tts=True,
         long_term_memory_enabled=True,
         planning_enabled=True,
         streaming_enabled=True,

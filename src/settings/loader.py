@@ -162,6 +162,15 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
             "tts_mixer_buffer", int, _as_int
         ),
     },
+    "scheduler": {
+        "enabled": _SettingSpec("scheduler_enabled", bool),
+        "database": _SettingSpec("scheduler_database", str, _as_path),
+        "poll_interval_seconds": _SettingSpec("scheduler_poll_interval", (int, float), _as_float),
+        "max_tasks": _SettingSpec("scheduler_max_tasks", int, _as_int),
+        "max_message_characters": _SettingSpec("scheduler_max_message_characters", int, _as_int),
+        "announce_with_tts": _SettingSpec("scheduler_announce_tts", bool),
+        "max_announcements_per_cycle": _SettingSpec("scheduler_max_announcements", int, _as_int),
+    },
     "long_term_memory": {
         "enabled": _SettingSpec(
             "long_term_memory_enabled", bool
@@ -431,6 +440,10 @@ def _validate_values(values: dict[str, Any]) -> None:
         "tts_chunk_characters",
         "tts_parallel_requests",
         "tts_mixer_buffer",
+        "scheduler_poll_interval",
+        "scheduler_max_tasks",
+        "scheduler_max_message_characters",
+        "scheduler_max_announcements",
         "memory_context_limit",
         "memory_context_characters",
         "memory_max_entries",

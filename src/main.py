@@ -23,6 +23,27 @@ def main() -> int:
         print(format_installed_browsers())
         return 0
 
+    if args.list_reminders:
+        from src.scheduler import SchedulerStore, SchedulerStoreConfig
+
+        with SchedulerStore(
+            SchedulerStoreConfig(
+                enabled=True,
+                database=args.scheduler_database,
+                max_tasks=args.scheduler_max_tasks,
+                max_message_characters=args.scheduler_max_message_characters,
+            )
+        ) as store:
+            tasks = store.list_tasks(status="all", limit=500)
+            if not tasks:
+                print("No scheduled reminders.")
+            for task in tasks:
+                print(
+                    f"[{task.status}] #{task.id} {task.next_run_local} "
+                    f"{task.recurrence}/{task.interval} - {task.message}"
+                )
+        return 0
+
     if args.list_memories:
         from src.memory import (
             LocalMemoryStore,

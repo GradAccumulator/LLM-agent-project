@@ -117,6 +117,7 @@ class SpeechCapture:
         *,
         start_timeout_seconds: float | None = None,
         on_speech_start: Callable[[], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> CaptureResult:
         self.detector.reset()
 
@@ -145,7 +146,34 @@ class SpeechCapture:
         peak_probability = 0.0
 
         while True:
-            frame = microphone.read(timeout=2.0)
+            if should_cancel is not None and should_cancel():
+                return CaptureResult(
+                    samples=np.empty(0, dtype=np.int16),
+                    speech_detected=False,
+                    duration_seconds=0.0,
+                    peak_probability=peak_probability,
+                    end_reason="text_input",
+                )
+            try:
+                frame = microphone.read(
+                    timeout=(
+                        0.25
+                        if should_cancel is not None
+                        else 2.0
+                    )
+                )
+            except TimeoutError:
+                if should_cancel is not None:
+                    continue
+                raise
+            if should_cancel is not None and should_cancel():
+                return CaptureResult(
+                    samples=np.empty(0, dtype=np.int16),
+                    speech_detected=False,
+                    duration_seconds=0.0,
+                    peak_probability=peak_probability,
+                    end_reason="text_input",
+                )
             samples = frame.samples
             is_speech, probability = self.detector.is_speech(samples)
 

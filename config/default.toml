@@ -51,6 +51,15 @@ mixer_buffer = 256
 
 
 
+[scheduler]
+enabled = true
+database = "data/jarvis_tasks.db"
+poll_interval_seconds = 0.5
+max_tasks = 200
+max_message_characters = 500
+announce_with_tts = true
+max_announcements_per_cycle = 3
+
 [long_term_memory]
 enabled = true
 database = "data/jarvis_memory.db"

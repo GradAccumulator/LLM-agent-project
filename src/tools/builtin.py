@@ -15,11 +15,13 @@ from src.browser import (
     SystemBrowserController,
 )
 from src.memory import LocalMemoryStore
+from src.scheduler import SchedulerStore
 
 from .browser_tools import register_browser_tools
 from .registry import ToolRegistry, ToolSpec
 from .planning_tools import register_planning_tools
 from .memory_tools import register_memory_tools
+from .scheduler_tools import register_scheduler_tools
 from .windows_desktop import (
     focus_window,
     get_active_window,
@@ -338,8 +340,12 @@ def build_default_tool_registry(
     *,
     browser_control_mode: str = "system",
     memory_store: LocalMemoryStore | None = None,
+    scheduler_store: SchedulerStore | None = None,
 ) -> ToolRegistry:
-    registry = ToolRegistry(memory_store=memory_store)
+    registry = ToolRegistry(
+        memory_store=memory_store,
+        scheduler_store=scheduler_store,
+    )
     register_planning_tools(registry)
 
     effective_browser_config = (
@@ -366,6 +372,10 @@ def build_default_tool_registry(
             open_url=open_selected_page,
         )
         registry.register_closer(memory_store.close)
+
+    if scheduler_store is not None and scheduler_store.enabled:
+        register_scheduler_tools(registry, scheduler_store)
+        registry.register_closer(scheduler_store.close)
 
     def open_application_selected(
         application: str,

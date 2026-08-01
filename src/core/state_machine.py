@@ -13,6 +13,7 @@ class AgentState(str, Enum):
     STARTING = 'STARTING'
     SLEEPING = 'SLEEPING'
     AWAITING_SPEECH = 'AWAITING_SPEECH'
+    TEXT_INPUT = 'TEXT_INPUT'
     CAPTURING = 'CAPTURING'
     TRANSCRIBING = 'TRANSCRIBING'
     THINKING = 'THINKING'
@@ -50,9 +51,25 @@ StateListener = Callable[[StateTransition], None]
 def _build_allowed_transitions() -> dict[AgentState, frozenset[AgentState]]:
     normal: dict[AgentState, set[AgentState]] = {
         AgentState.STARTING: {AgentState.SLEEPING},
-        AgentState.SLEEPING: {AgentState.AWAITING_SPEECH},
-        AgentState.AWAITING_SPEECH: {AgentState.CAPTURING, AgentState.SLEEPING},
-        AgentState.CAPTURING: {AgentState.TRANSCRIBING},
+        AgentState.SLEEPING: {
+            AgentState.AWAITING_SPEECH,
+            AgentState.TEXT_INPUT,
+        },
+        AgentState.AWAITING_SPEECH: {
+            AgentState.CAPTURING,
+            AgentState.TEXT_INPUT,
+            AgentState.SLEEPING,
+        },
+        AgentState.TEXT_INPUT: {
+            AgentState.THINKING,
+            AgentState.EXECUTING_TOOL,
+            AgentState.AWAITING_SPEECH,
+            AgentState.SLEEPING,
+        },
+        AgentState.CAPTURING: {
+            AgentState.TRANSCRIBING,
+            AgentState.TEXT_INPUT,
+        },
         AgentState.TRANSCRIBING: {
             AgentState.THINKING,
             AgentState.EXECUTING_TOOL,

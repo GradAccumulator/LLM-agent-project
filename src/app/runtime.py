@@ -13,10 +13,15 @@ import numpy as np
 from src.audio import MicrophoneStream
 from src.bargein import BargeInMonitor
 from src.conversation import ConversationSession
+from src.console_io import (
+    ConsoleTextInput,
+    print_numbered_reply,
+)
 from src.core import AgentState, AgentStateMachine, StateTransition
 from src.fastpath import LocalCommandRouter
 from src.llm import JarvisAgent, ToolLifecycleEvent
 from src.metrics import JsonlMetricsLogger
+from src.scheduler import ReminderScheduler
 from src.speech import CaptureResult, SpeechCapture, save_wave_file
 from src.stt import SpeechRecognizer, TranscriptionResult
 from src.streaming import (
@@ -52,6 +57,8 @@ class RuntimeConfig:
     save_directory: Path = Path('recordings')
     max_saved_audio_files: int = 5
     tts_enabled: bool = True
+    scheduler_announce_tts: bool = True
+    scheduler_max_announcements: int = 3
     streaming_enabled: bool = True
     streaming_minimum_characters: int = 24
     streaming_maximum_characters: int = 160
@@ -67,6 +74,7 @@ class _CommandTrace:
     conversation_id: str | None
     turn_index: int
     wakeword_required: bool
+    input_source: str
     capture_audio_seconds: float | None = None
     stt_seconds: float | None = None
     llm_seconds: float | None = None
@@ -117,6 +125,8 @@ class VoiceAssistantRuntime:
         conversation: ConversationSession,
         fast_router: LocalCommandRouter,
         barge_in: BargeInMonitor,
+        scheduler: ReminderScheduler,
+        console_input: ConsoleTextInput,
         state_machine: AgentStateMachine | None = None,
     ) -> None:
         if config.recovery_delay_seconds < 0:
@@ -132,6 +142,8 @@ class VoiceAssistantRuntime:
         self.conversation = conversation
         self.fast_router = fast_router
         self.barge_in = barge_in
+        self.scheduler = scheduler
+        self.console_input = console_input
         self.state = state_machine or AgentStateMachine()
         self.tts_enabled = config.tts_enabled
         self._active_command: _CommandTrace | None = None
@@ -171,7 +183,13 @@ class VoiceAssistantRuntime:
             'elapsed_seconds': snapshot.elapsed_seconds,
         })
 
-    def _start_command(self, *, wake_score: float | None, wakeword_required: bool) -> None:
+    def _start_command(
+        self,
+        *,
+        wake_score: float | None,
+        wakeword_required: bool,
+        input_source: str = "voice",
+    ) -> None:
         trace = _CommandTrace(
             command_id=uuid4().hex,
             started_at=perf_counter(),
@@ -179,6 +197,7 @@ class VoiceAssistantRuntime:
             conversation_id=self.conversation.session_id,
             turn_index=self.conversation.next_turn_index,
             wakeword_required=wakeword_required,
+            input_source=input_source,
         )
         self._active_command = trace
         self.metrics.log('command_started', data={
@@ -187,6 +206,7 @@ class VoiceAssistantRuntime:
             'turn_index': trace.turn_index,
             'wake_score': trace.wake_score,
             'wakeword_required': trace.wakeword_required,
+            'input_source': trace.input_source,
         })
 
     def _finish_command(self, outcome: str) -> None:
@@ -198,6 +218,7 @@ class VoiceAssistantRuntime:
             'conversation_id': trace.conversation_id,
             'turn_index': trace.turn_index,
             'wakeword_required': trace.wakeword_required,
+            'input_source': trace.input_source,
             'outcome': outcome,
             'total_seconds': round(perf_counter() - trace.started_at, 6),
             'capture_audio_seconds': trace.capture_audio_seconds,
@@ -547,16 +568,61 @@ class VoiceAssistantRuntime:
             return
         raise ValueError(f'Unknown tool lifecycle phase: {event.phase}')
 
-    def _wait_for_wakeword(self) -> DetectionResult:
+    def _announce_due_reminder(self, reminder) -> None:
+        task = reminder.task
+        text = f"알림입니다. {task.message}"
+        print("\n" + "=" * 60)
+        print(f"REMINDER #{task.id}: {task.message}")
+        print("=" * 60)
+        play_detection_sound()
+        self.metrics.log(
+            "reminder_delivered",
+            data={
+                "task_id": task.id,
+                "due_at": reminder.due_at,
+                "claimed_at": reminder.claimed_at,
+                "late_seconds": reminder.late_seconds,
+                "recurrence": task.recurrence,
+                "interval": task.interval,
+            },
+            private={"reminder_message": task.message},
+        )
+        if not self.tts_enabled or not self.config.scheduler_announce_tts:
+            return
+        self._transition(AgentState.SPEAKING, "scheduled reminder")
+        try:
+            self.synthesizer.speak(text)
+        except RuntimeError as exc:
+            print(f"Reminder TTS warning: {exc}", file=sys.stderr)
+        finally:
+            self._transition(AgentState.SLEEPING, "scheduled reminder delivered")
+            self.microphone.clear_pending()
+
+    def _deliver_due_reminders(self) -> int:
+        if self.state.current is not AgentState.SLEEPING:
+            return 0
+        reminders = self.scheduler.drain(limit=self.config.scheduler_max_announcements)
+        for reminder in reminders:
+            self._announce_due_reminder(reminder)
+        return len(reminders)
+
+    def _wait_for_wakeword(
+        self,
+    ) -> DetectionResult | None:
         while True:
-            frame = self.microphone.read(timeout=2.0)
-            result = self.wakeword.predict(frame.samples)
-            rms = normalized_rms(frame.samples)
-            print(
-                f'\rSLEEPING wake={result.score:.3f} rms={rms:.4f} '
-                f'device={self.microphone.device}      ',
-                end='',
-                flush=True,
+            self._deliver_due_reminders()
+            if self.console_input.has_pending():
+                return None
+            try:
+                frame = self.microphone.read(
+                    timeout=0.25
+                )
+            except TimeoutError:
+                continue
+            if self.console_input.has_pending():
+                return None
+            result = self.wakeword.predict(
+                frame.samples
             )
             if result.detected:
                 return result
@@ -580,6 +646,9 @@ class VoiceAssistantRuntime:
         return self.speech_capture.capture(
             self.microphone,
             on_speech_start=self._on_speech_start,
+            should_cancel=(
+                self.console_input.has_pending
+            ),
         )
 
     def _capture_followup(self) -> CaptureResult:
@@ -588,6 +657,9 @@ class VoiceAssistantRuntime:
             self.microphone,
             start_timeout_seconds=self.conversation.config.followup_timeout_seconds,
             on_speech_start=self._on_speech_start,
+            should_cancel=(
+                self.console_input.has_pending
+            ),
         )
 
     def _transcribe(self, capture: CaptureResult) -> TranscriptionResult:
@@ -631,41 +703,69 @@ class VoiceAssistantRuntime:
         )
         return text
 
-    def _local_reply(self, text: str) -> None:
+    def _local_reply(
+        self,
+        text: str,
+        *,
+        speak_response: bool,
+    ) -> None:
         if self._active_command is not None:
             self._active_command.reply = text
-        print(f'JARVIS: {text}')
-        if self.tts_enabled:
+        print_numbered_reply(text)
+        if speak_response and self.tts_enabled:
             self.tts_enabled = self._speak(text)
 
-    def _handle_local_command(self, transcript_text: str) -> str | None:
+    def _handle_local_command(
+        self,
+        transcript_text: str,
+        *,
+        speak_response: bool,
+    ) -> str | None:
         normalized = normalize_local_command(transcript_text)
         if not transcript_text:
-            self._local_reply('음성을 이해하지 못했습니다.')
+            self._local_reply(
+                '입력을 이해하지 못했습니다.',
+                speak_response=speak_response,
+            )
             return 'local_command'
         if normalized in _SESSION_END_COMMANDS:
-            self._local_reply('대화 모드를 종료합니다.')
+            self._local_reply(
+                '대화 모드를 종료합니다.',
+                speak_response=speak_response,
+            )
             return 'end_session'
         if normalized in _TTS_OFF_COMMANDS:
             message = '음성 출력을 끕니다.'
             if self._active_command is not None:
                 self._active_command.reply = message
             print(f'JARVIS: {message}')
-            if self.tts_enabled:
+            print_numbered_reply(message)
+            if speak_response and self.tts_enabled:
                 self._speak(message)
             self.tts_enabled = False
             return 'local_command'
         if normalized in _TTS_ON_COMMANDS:
             self.tts_enabled = True
-            self._local_reply('음성 출력을 켰습니다.')
+            self._local_reply(
+                '음성 출력을 켰습니다.',
+                speak_response=speak_response,
+            )
             return 'local_command'
         if normalized in _RESET_COMMANDS:
             self.agent.reset_conversation()
-            self._local_reply('대화 기억을 초기화했습니다.')
+            self._local_reply(
+                '대화 기억을 초기화했습니다.',
+                speak_response=speak_response,
+            )
             return 'local_command'
         return None
 
-    def _try_fast_path(self, transcript_text: str) -> bool:
+    def _try_fast_path(
+        self,
+        transcript_text: str,
+        *,
+        speak_response: bool,
+    ) -> bool:
         result = self.fast_router.try_execute(
             transcript_text,
             on_match=lambda route: self._transition(
@@ -711,7 +811,10 @@ class VoiceAssistantRuntime:
             f"FAST PATH [{result.route} | "
             f"{result.elapsed_seconds:.3f}s | GPT bypassed]"
         )
-        self._local_reply(result.reply)
+        self._local_reply(
+            result.reply,
+            speak_response=speak_response,
+        )
         return True
 
 
@@ -941,6 +1044,8 @@ class VoiceAssistantRuntime:
     def _ask_agent_buffered(
         self,
         transcript_text: str,
+        *,
+        speak_response: bool,
     ) -> None:
         self._transition(
             AgentState.THINKING,
@@ -951,9 +1056,9 @@ class VoiceAssistantRuntime:
             transcript_text,
             on_tool_event=self._on_tool_event,
         )
+        print_numbered_reply(reply.text)
         self._log_agent_reply(reply)
-        print(reply.text)
-        if self.tts_enabled:
+        if speak_response and self.tts_enabled:
             self.tts_enabled = self._speak(
                 reply.text
             )
@@ -961,6 +1066,8 @@ class VoiceAssistantRuntime:
     def _ask_agent_streaming(
         self,
         transcript_text: str,
+        *,
+        speak_response: bool,
     ) -> None:
         self._transition(
             AgentState.THINKING,
@@ -982,7 +1089,6 @@ class VoiceAssistantRuntime:
         )
         session: StreamingSpeechSession | None = None
         monitor_started = False
-        printed_stream_header = False
 
         def start_audio_stream() -> (
             StreamingSpeechSession
@@ -1014,25 +1120,22 @@ class VoiceAssistantRuntime:
         def enqueue_chunks(
             chunks: tuple[str, ...],
         ) -> None:
-            if not chunks or not self.tts_enabled:
+            if (
+                not chunks
+                or not speak_response
+                or not self.tts_enabled
+            ):
                 return
             speech_session = start_audio_stream()
             for chunk in chunks:
                 speech_session.enqueue(chunk)
 
         def on_text_delta(delta: str) -> None:
-            nonlocal printed_stream_header
-            if not printed_stream_header:
-                print("JARVIS STREAM: ", end="", flush=True)
-                printed_stream_header = True
-
-            print(delta, end="", flush=True)
             enqueue_chunks(chunker.feed(delta))
 
         def on_text_cancel() -> None:
             nonlocal session
             nonlocal monitor_started
-            nonlocal printed_stream_header
 
             chunker.reset()
             if session is not None:
@@ -1045,13 +1148,6 @@ class VoiceAssistantRuntime:
                         self.barge_in.stop(timeout=1.0)
                 finally:
                     monitor_started = False
-
-            if printed_stream_header:
-                print(
-                    "\nSTREAM: tool call detected; "
-                    "discarding the provisional speech."
-                )
-                printed_stream_header = False
 
             if self.state.current is AgentState.SPEAKING:
                 self._transition(
@@ -1066,10 +1162,8 @@ class VoiceAssistantRuntime:
             on_tool_event=self._on_tool_event,
         )
 
-        if printed_stream_header:
-            print()
-
         enqueue_chunks(chunker.flush())
+        print_numbered_reply(reply.text)
 
         if session is not None:
             timing = session.finish()
@@ -1083,21 +1177,31 @@ class VoiceAssistantRuntime:
     def _ask_agent(
         self,
         transcript_text: str,
+        *,
+        speak_response: bool,
     ) -> None:
-        if self.config.streaming_enabled:
+        if (
+            self.config.streaming_enabled
+            and speak_response
+        ):
             self._ask_agent_streaming(
-                transcript_text
+                transcript_text,
+                speak_response=True,
             )
         else:
             self._ask_agent_buffered(
-                transcript_text
+                transcript_text,
+                speak_response=speak_response,
             )
 
     def _process_capture(self, capture: CaptureResult) -> None:
         self._print_capture(capture)
         transcription = self._transcribe(capture)
         transcript_text = self._print_transcription(transcription)
-        local_result = self._handle_local_command(transcript_text)
+        local_result = self._handle_local_command(
+            transcript_text,
+            speak_response=True,
+        )
         if local_result == 'end_session':
             self._pending_barge_in_capture = None
             self._finish_command('session_end_command')
@@ -1110,15 +1214,135 @@ class VoiceAssistantRuntime:
         if local_result is not None:
             self._after_turn(outcome=local_result)
             return
-        if self._try_fast_path(transcript_text):
+        if self._try_fast_path(
+            transcript_text,
+            speak_response=True,
+        ):
             self._after_turn(outcome="fast_path")
             return
-        self._ask_agent(transcript_text)
+        self._ask_agent(
+            transcript_text,
+            speak_response=True,
+        )
         self._after_turn(outcome='success')
+
+    def _on_console_text_submitted(
+        self,
+        text: str,
+    ) -> None:
+        del text
+        if self.state.current is AgentState.SPEAKING:
+            self.synthesizer.stop()
+            print(
+                "\nTEXT INPUT: stopping TTS and queueing the command."
+            )
+
+    def _prepare_text_conversation(self) -> None:
+        if not self.conversation.active:
+            self._start_conversation()
+            return
+        if self.conversation.can_accept_followup:
+            return
+        self._end_conversation(
+            "text_input_at_turn_limit"
+        )
+        self._start_conversation()
+
+    def _process_next_text_input(self) -> bool:
+        text = self.console_input.try_read()
+        if text is None:
+            return False
+
+        self._prepare_text_conversation()
+        self.microphone.clear_pending()
+        self.wakeword.reset()
+        self._transition(
+            AgentState.TEXT_INPUT,
+            "console text submitted",
+        )
+        self._start_command(
+            wake_score=None,
+            wakeword_required=False,
+            input_source="text",
+        )
+        if self._active_command is not None:
+            self._active_command.transcript = text
+
+        self.metrics.log(
+            "text_input_received",
+            data={
+                "command_id": (
+                    self._active_command.command_id
+                    if self._active_command
+                    else None
+                ),
+                "conversation_id": (
+                    self.conversation.session_id
+                ),
+                "turn_index": (
+                    self.conversation.next_turn_index
+                ),
+                "characters": len(text),
+            },
+            private={"text_input": text},
+        )
+        print(
+            f"\nTEXT COMMAND: {text}"
+        )
+
+        local_result = self._handle_local_command(
+            text,
+            speak_response=False,
+        )
+        if local_result == "end_session":
+            self._pending_barge_in_capture = None
+            self._finish_command(
+                "text_session_end_command"
+            )
+            self.conversation.complete_turn()
+            self._return_to_sleep(
+                reason="conversation ended by text command",
+                conversation_end_reason="text_user_command",
+            )
+            return True
+        if local_result is not None:
+            self._after_turn(
+                outcome=f"text_{local_result}"
+            )
+            return True
+
+        if self._try_fast_path(
+            text,
+            speak_response=False,
+        ):
+            self._after_turn(
+                outcome="text_fast_path"
+            )
+            return True
+
+        self._ask_agent(
+            text,
+            speak_response=False,
+        )
+        self._after_turn(
+            outcome="text_success"
+        )
+        return True
 
     def _run_wakeword_cycle(self) -> None:
         wake_result = self._wait_for_wakeword()
-        capture = self._capture_after_wakeword(wake_result)
+        if wake_result is None:
+            self._process_next_text_input()
+            return
+        capture = self._capture_after_wakeword(
+            wake_result
+        )
+        if capture.end_reason == "text_input":
+            self._finish_command(
+                "voice_capture_preempted_by_text"
+            )
+            self._process_next_text_input()
+            return
         if not capture.speech_detected:
             print(
                 f'COMMAND: no speech detected '
@@ -1133,7 +1357,15 @@ class VoiceAssistantRuntime:
         self._process_capture(capture)
 
     def _run_followup_cycle(self) -> None:
+        if self._process_next_text_input():
+            return
         capture = self._capture_followup()
+        if capture.end_reason == "text_input":
+            self._finish_command(
+                "voice_followup_preempted_by_text"
+            )
+            self._process_next_text_input()
+            return
         if not capture.speech_detected:
             print('\nFOLLOW-UP: timed out. Returning to wake-word mode.')
             self._finish_command('followup_timeout')
@@ -1173,9 +1405,20 @@ class VoiceAssistantRuntime:
 
     def run(self) -> int:
         try:
+            self.scheduler.start()
+            self.console_input.start(
+                on_submit=(
+                    self._on_console_text_submitted
+                )
+            )
             with self.microphone:
                 self._transition(AgentState.SLEEPING, 'startup completed')
-                print('Say "Hey Jarvis". Press Ctrl+C to stop.\n')
+                self._deliver_due_reminders()
+                print(
+                    'Voice: say "Hey Jarvis". '
+                    'Text: type normally and press Enter. '
+                    'Ctrl+C stops Jarvis.\n'
+                )
                 while True:
                     try:
                         if self.conversation.active:
@@ -1191,6 +1434,8 @@ class VoiceAssistantRuntime:
             self._finish_command('stopped')
             self._end_conversation('runtime_stopped')
             self.synthesizer.stop()
+            self.scheduler.stop()
+            self.console_input.close()
             try:
                 self.barge_in.close()
             finally:

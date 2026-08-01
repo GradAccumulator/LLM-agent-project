@@ -6,6 +6,7 @@ from time import perf_counter
 from typing import Any, Callable, Mapping
 
 from src.memory import LocalMemoryStore
+from src.scheduler import SchedulerStore
 
 from src.planning import (
     TaskPlanTracker,
@@ -66,16 +67,22 @@ class ToolRegistry:
     def __init__(
         self,
         memory_store: LocalMemoryStore | None = None,
+        scheduler_store: SchedulerStore | None = None,
     ) -> None:
         self._tools: dict[str, ToolSpec] = {}
         self._closers: list[Callable[[], Any]] = []
         self._closed = False
         self.plan_tracker = TaskPlanTracker()
         self._memory_store = memory_store
+        self._scheduler_store = scheduler_store
 
     @property
     def memory_store(self) -> LocalMemoryStore | None:
         return self._memory_store
+
+    @property
+    def scheduler_store(self) -> SchedulerStore | None:
+        return self._scheduler_store
 
     @property
     def names(self) -> tuple[str, ...]:

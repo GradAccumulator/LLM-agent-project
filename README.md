@@ -1,83 +1,117 @@
-# LLM Agent — Step 17: SQLite Long-Term Memory + User Aliases
+# LLM Agent — Step 18: Persistent Reminders and Recurring Tasks
 
-사용자가 **명시적으로 기억하라고 한 정보만** 로컬 SQLite에 저장합니다.
-프로그램을 종료하고 다시 실행해도 별칭과 선호가 유지됩니다.
+## Step 18.1 — 음성·텍스트 통합 입력과 문장별 출력
 
-## 저장 예시
-
-```text
-"내 LLM 프로젝트"는 D:\Projects\llm-agent로 기억해
-"학교 사이트"는 https://www.inha.ac.kr 로 기억해
-앞으로 기본 검색 엔진은 구글로 기억해
-```
-
-저장 후에는 다음처럼 사용할 수 있습니다.
+별도의 채팅 모드 전환 없이 `python -m src.main`을 실행한 같은 CMD 창에서
+바로 텍스트 명령을 입력할 수 있습니다.
 
 ```text
-내 LLM 프로젝트 열어줘
-학교 사이트 열어줘
-Faster-Whisper 검색해줘
+Voice: say "Hey Jarvis".
+Text: type normally and press Enter.
+Ctrl+C stops Jarvis.
+YOU> 안녕
 ```
 
-저장된 URL·경로 별칭은 fast path에서 확인되므로, 단순한 `열어줘` 명령은
-GPT를 거치지 않고 바로 실행됩니다. `search_engine = google` 선호를 저장하면
-서비스 이름 없이 말한 검색도 로컬 fast path로 처리합니다.
+백그라운드에서 표준 `input()`이 **전체 줄을 그대로** 받기 때문에 첫 번째 글자를
+모드 전환 키로 소비하지 않습니다. 예를 들어 `안녕`을 입력하면 `ㅏㄴ녕`이 아니라
+`안녕` 전체가 전달됩니다.
 
-## 메모리 도구
+텍스트 입력은 음성 파이프라인과 같은 로컬 명령·fast path·GPT·도구를 사용하지만,
+그 답변은 TTS로 읽지 않습니다. 음성으로 질문한 답변과 예약 알림 TTS는 기존처럼
+동작합니다.
+
+TTS가 재생되는 중 텍스트 한 줄을 제출하면 TTS를 즉시 중단하고, 현재 작업이 안전한
+지점에 도달한 뒤 입력된 텍스트를 처리합니다. 음성 캡처 대기 중이라면 캡처를 취소하고
+텍스트 명령으로 바로 전환합니다.
+
+GPT와 로컬 응답은 문장별로 줄을 나누고 전체 문장 수를 표시합니다.
 
 ```text
-remember_alias
-remember_preference
-list_saved_memories
-resolve_saved_alias
-open_saved_alias
-forget_saved_memory
+JARVIS | 1/3 | 첫 번째 문장입니다.
+       | 2/3 | 두 번째 문장입니다.
+       | 3/3 | 세 번째 문장입니다.
 ```
 
-자비스는 `기억해`, `저장해`, `앞으로 기본으로 써`처럼 사용자가 명시적으로
-요청한 경우에만 쓰기 도구를 호출합니다. 대화 내용이나 추론한 개인정보를
-자동으로 저장하지 않습니다.
+스트리밍 TTS는 그대로 낮은 지연 시간으로 재생하지만, CMD에는 델타를 한 줄로 이어
+붙이지 않고 완성된 답변을 위 형식으로 한 번만 출력합니다.
 
-## 보안 제한
+### 커밋 메시지
 
-다음 항목은 명시적으로 요청해도 저장을 거부합니다.
+```bash
+git commit -m "Add unified console text input and numbered reply formatting"
+```
+
+### 다음 단계
+
+다음은 **Step 19: Google Calendar·Gmail 읽기 전용 연결**입니다. 오늘 일정,
+빈 시간, 최근 중요 메일을 조회하고, 생성·전송 같은 쓰기 작업은 별도 확인을 받게
+만드는 단계입니다.
+
+
+알림과 반복 작업을 SQLite에 저장하고, Jarvis를 다시 실행해도 유지되게
+만들었습니다.
+
+## GPT 없이 바로 예약되는 명령
 
 ```text
-비밀번호와 PIN
-OTP·인증번호·복구 코드
-OpenAI·GitHub 등 API 키와 액세스 토큰
-카드·계좌·주민등록 정보
-개인 키와 자격 증명 파일 경로
+30분 뒤에 물 마시라고 알려줘
+2시간 후 과제 하라고 알려줘
+알림 목록 보여줘
+알림 3번 취소해줘
 ```
 
-저장된 메모리는 프롬프트에 **JSON 데이터**로만 주입되며, 메모리 값 안의
-문장을 시스템 지시로 실행하지 않도록 분리했습니다.
+상대 시간 명령은 로컬 fast path에서 처리하므로 OpenAI API를 호출하지 않습니다.
+
+## 날짜·시간 및 반복 알림
+
+```text
+내일 오후 3시에 병원 예약 확인하라고 알려줘
+매일 오전 8시에 오늘 할 일 확인하라고 알려줘
+매주 월요일 오후 7시에 주간 계획 세우라고 알려줘
+5번 알림을 20분 미뤄줘
+```
+
+복잡한 시간 표현은 GPT가 `get_current_datetime`으로 로컬 시간대를 확인한 뒤
+스케줄러 도구를 호출합니다.
+
+## 추가 도구
+
+```text
+schedule_relative_reminder
+schedule_reminder
+schedule_recurring_reminder
+list_scheduled_reminders
+cancel_scheduled_reminder
+snooze_scheduled_reminder
+```
+
+## 전달 방식
+
+Jarvis가 `SLEEPING` 상태에서 호출어를 기다리는 동안 예약 시간이 되면 콘솔,
+알림음, TTS로 알려줍니다. 대화나 STT가 진행 중이면 큐에 보관했다가 다시
+대기 상태가 되었을 때 전달합니다.
+
+프로그램이 꺼져 있던 동안 지난 일회성 알림은 다음 실행 때 한 번 전달됩니다.
+반복 알림은 누락 횟수만큼 연속 재생하지 않고 다음 미래 시각으로 이동합니다.
 
 ## 설정
 
 ```toml
-[long_term_memory]
+[scheduler]
 enabled = true
-database = "data/jarvis_memory.db"
-context_limit = 20
-max_context_characters = 4000
-max_entries = 200
-max_value_characters = 2048
+database = "data/jarvis_tasks.db"
+poll_interval_seconds = 0.5
+max_tasks = 200
+max_message_characters = 500
+announce_with_tts = true
+max_announcements_per_cycle = 3
 ```
-
-기능 끄기:
 
 ```powershell
-python -m src.main --disable-long-term-memory
+python -m src.main --list-reminders
+python -m src.main --scheduler-no-tts
+python -m src.main --disable-scheduler
 ```
-
-저장된 항목 확인:
-
-```powershell
-python -m src.main --list-memories
-```
-
-데이터베이스 파일은 Git에 커밋되지 않도록 `.gitignore`에 추가했습니다.
 
 ## 실행
 
@@ -86,23 +120,14 @@ python -m pip install -r requirements.txt
 python -m src.main
 ```
 
-SQLite는 Python 표준 라이브러리라 새 패키지는 필요하지 않습니다.
-
 ## 커밋 메시지
 
 ```bash
-git commit -m "Add explicit SQLite memory and user aliases"
+git commit -m "Add persistent reminders and recurring task scheduling"
 ```
 
 ## 다음 단계
 
-다음은 **Step 18: 능동형 작업·알림 스케줄러**입니다.
-
-```text
-30분 뒤 알려줘
-매일 아침 일정 요약해줘
-특정 조건이 만족되면 알림 보내줘
-```
-
-예약 작업을 SQLite에 저장하고, 프로그램 재시작 후에도 실행되도록 만드는
-단계입니다.
+다음은 **Step 19: 캘린더·이메일 연결 계층**입니다. Google Calendar와 Gmail을
+우선 읽기 전용으로 연결하고, 일정 생성이나 메일 전송 같은 쓰기 작업은 별도
+확인을 거치게 만듭니다.

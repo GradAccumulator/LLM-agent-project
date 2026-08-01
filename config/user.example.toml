@@ -72,3 +72,10 @@ context_limit = 20
 max_context_characters = 4000
 max_entries = 200
 max_value_characters = 2048
+
+[scheduler]
+enabled = true
+database = "data/jarvis_tasks.db"
+poll_interval_seconds = 0.5
+announce_with_tts = true
+max_announcements_per_cycle = 3

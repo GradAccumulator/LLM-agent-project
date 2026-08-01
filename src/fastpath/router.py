@@ -162,6 +162,41 @@ class LocalCommandRouter:
         "현재페이지정보알려줘",
     }
 
+    _REMINDER_LIST_COMMANDS = {
+        "알림목록보여줘",
+        "예약목록보여줘",
+        "리마인더목록보여줘",
+        "예약된알림보여줘",
+    }
+
+    _RELATIVE_REMINDER_PATTERNS = (
+        re.compile(
+            r"^(?P<amount>\d+(?:\.\d+)?)\s*(?P<unit>초|분|시간|일)\s*"
+            r"(?:뒤|후)(?:에)?\s*(?P<message>.*?)\s*"
+            r"(?:알려줘|알림해줘|리마인드해줘|깨워줘)$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"^(?P<message>.+?)\s*(?P<amount>\d+(?:\.\d+)?)\s*"
+            r"(?P<unit>초|분|시간|일)\s*(?:뒤|후)(?:에)?\s*"
+            r"(?:알려줘|알림해줘|리마인드해줘|깨워줘)$",
+            re.IGNORECASE,
+        ),
+    )
+
+    _REMINDER_CANCEL_PATTERNS = (
+        re.compile(
+            r"^(?:알림|예약|리마인더)\s*(?P<id>\d+)(?:번)?\s*"
+            r"(?:취소해줘|취소해|삭제해줘|삭제해)$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"^(?P<id>\d+)(?:번)?\s*(?:알림|예약|리마인더)\s*"
+            r"(?:취소해줘|취소해|삭제해줘|삭제해)$",
+            re.IGNORECASE,
+        ),
+    )
+
     _SEARCH_PATTERNS = (
         re.compile(
             r"^(구글|네이버|유튜브)(?:에서|에)?\s*(.+?)\s*"
@@ -274,6 +309,14 @@ class LocalCommandRouter:
         )
 
     @staticmethod
+    def _relative_seconds(amount: float, unit: str) -> float:
+        return amount * {"초": 1.0, "분": 60.0, "시간": 3600.0, "일": 86400.0}[unit]
+
+    @staticmethod
+    def _clean_reminder_message(message: str) -> str:
+        return message.strip() or "알림"
+
+    @staticmethod
     def _open_variants(alias: str) -> set[str]:
         return {
             f"{alias}켜줘",
@@ -298,6 +341,61 @@ class LocalCommandRouter:
         normalized = _normalize(original)
         if not normalized:
             return None
+
+        if normalized in self._REMINDER_LIST_COMMANDS:
+            def reminder_list_reply(data: dict[str, Any]) -> str:
+                tasks = data.get("tasks") or []
+                if not tasks:
+                    return "예약된 활성 알림이 없습니다."
+                summaries = [
+                    f"{item.get('id')}번 {item.get('next_run_local')} {item.get('message')}"
+                    for item in tasks[:5]
+                ]
+                return "예약된 알림은 " + ", ".join(summaries) + "입니다."
+
+            return _MatchedCommand(
+                "reminder_list",
+                lambda: self._execute_one(
+                    "reminder_list",
+                    "list_scheduled_reminders",
+                    {"status": "active", "limit": 20},
+                    reminder_list_reply,
+                ),
+            )
+
+        for pattern in self._REMINDER_CANCEL_PATTERNS:
+            cancel_match = pattern.match(original)
+            if cancel_match:
+                task_id = int(cancel_match.group("id"))
+                return _MatchedCommand(
+                    f"reminder_cancel:{task_id}",
+                    lambda task_id=task_id: self._execute_one(
+                        f"reminder_cancel:{task_id}",
+                        "cancel_scheduled_reminder",
+                        {"task_id": task_id},
+                        lambda _data, task_id=task_id: f"알림 {task_id}번을 취소했습니다.",
+                    ),
+                )
+
+        for pattern in self._RELATIVE_REMINDER_PATTERNS:
+            reminder_match = pattern.match(original)
+            if reminder_match:
+                amount = float(reminder_match.group("amount"))
+                unit = reminder_match.group("unit")
+                message = self._clean_reminder_message(reminder_match.group("message") or "")
+                delay_seconds = self._relative_seconds(amount, unit)
+                return _MatchedCommand(
+                    "relative_reminder",
+                    lambda amount=amount, unit=unit, message=message, delay_seconds=delay_seconds: self._execute_one(
+                        "relative_reminder",
+                        "schedule_relative_reminder",
+                        {"message": message, "delay_seconds": delay_seconds},
+                        lambda data: (
+                            f"{amount:g}{unit} 뒤에 {message} 알림을 드리겠습니다. "
+                            f"알림 번호는 {(data.get('task') or {}).get('id', '?')}번입니다."
+                        ),
+                    ),
+                )
 
         if normalized in self._TIME_COMMANDS:
             return _MatchedCommand(

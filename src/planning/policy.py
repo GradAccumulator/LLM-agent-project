@@ -29,6 +29,11 @@ ACTION_TOOLS = {
     "browser_press_key",
     "browser_go_back",
     "browser_close",
+    "schedule_relative_reminder",
+    "schedule_reminder",
+    "schedule_recurring_reminder",
+    "cancel_scheduled_reminder",
+    "snooze_scheduled_reminder",
 }
 
 _SEQUENCE_MARKERS = (
@@ -181,6 +186,35 @@ def verify_action_result(
             "url": payload.get("url"),
             "title": payload.get("title"),
         }
+
+    elif tool_name in {
+        "schedule_relative_reminder",
+        "schedule_reminder",
+        "schedule_recurring_reminder",
+    }:
+        task = payload.get("task") or {}
+        verified = (
+            payload.get("scheduled") is True
+            and isinstance(task, dict)
+            and task.get("status") == "active"
+            and bool(task.get("next_run_at"))
+        )
+        strength = "strong"
+        evidence = {
+            "scheduled": payload.get("scheduled"),
+            "task_id": task.get("id") if isinstance(task, dict) else None,
+            "next_run_at": task.get("next_run_at") if isinstance(task, dict) else None,
+        }
+
+    elif tool_name == "cancel_scheduled_reminder":
+        verified = payload.get("cancelled") is True
+        strength = "strong"
+        evidence = {"cancelled": payload.get("cancelled"), "task": payload.get("task")}
+
+    elif tool_name == "snooze_scheduled_reminder":
+        verified = payload.get("snoozed") is True
+        strength = "strong"
+        evidence = {"snoozed": payload.get("snoozed"), "task": payload.get("task")}
 
     elif tool_name == "browser_close":
         # Closing an already-closed browser is an idempotent success.
