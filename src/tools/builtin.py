@@ -8,8 +8,11 @@ import shutil
 import subprocess
 import sys
 from urllib.parse import quote_plus
+
+from src.browser import BrowserAutomationConfig, BrowserController
 import webbrowser
 
+from .browser_tools import register_browser_tools
 from .registry import ToolRegistry, ToolSpec
 from .windows_desktop import (
     focus_window,
@@ -324,7 +327,9 @@ def inspect_screen(display: str) -> dict:
     }
 
 
-def build_default_tool_registry() -> ToolRegistry:
+def build_default_tool_registry(
+    browser_config: BrowserAutomationConfig | None = None,
+) -> ToolRegistry:
     registry = ToolRegistry()
 
     registry.register(
@@ -628,5 +633,10 @@ def build_default_tool_registry() -> ToolRegistry:
             handler=set_clipboard_text,
         )
     )
+
+    browser_controller = BrowserController(
+        browser_config or BrowserAutomationConfig()
+    )
+    register_browser_tools(registry, browser_controller)
 
     return registry

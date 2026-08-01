@@ -11,3 +11,4 @@ mss>=10,<11
 
 edge-tts>=7.2,<8
 pygame>=2.6,<3
+playwright>=1.61,<2

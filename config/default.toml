@@ -53,6 +53,17 @@ enabled = true
 followup_timeout_seconds = 12.0
 max_turns = 8
 
+[browser]
+enabled = true
+headless = false
+profile_directory = "browser_profile"
+navigation_timeout_seconds = 20.0
+action_timeout_seconds = 10.0
+max_page_text_characters = 12000
+
+[fast_path]
+enabled = true
+
 [runtime]
 show_state_transitions = true
 recovery_delay_seconds = 0.25

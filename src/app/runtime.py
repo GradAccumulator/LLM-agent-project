@@ -13,6 +13,7 @@ import numpy as np
 from src.audio import MicrophoneStream
 from src.conversation import ConversationSession
 from src.core import AgentState, AgentStateMachine, StateTransition
+from src.fastpath import LocalCommandRouter
 from src.llm import JarvisAgent, ToolLifecycleEvent
 from src.metrics import JsonlMetricsLogger
 from src.speech import CaptureResult, SpeechCapture, save_wave_file
@@ -101,6 +102,7 @@ class VoiceAssistantRuntime:
         synthesizer: SpeechSynthesizer,
         metrics: JsonlMetricsLogger,
         conversation: ConversationSession,
+        fast_router: LocalCommandRouter,
         state_machine: AgentStateMachine | None = None,
     ) -> None:
         if config.recovery_delay_seconds < 0:
@@ -114,6 +116,7 @@ class VoiceAssistantRuntime:
         self.synthesizer = synthesizer
         self.metrics = metrics
         self.conversation = conversation
+        self.fast_router = fast_router
         self.state = state_machine or AgentStateMachine()
         self.tts_enabled = config.tts_enabled
         self._active_command: _CommandTrace | None = None
@@ -403,6 +406,55 @@ class VoiceAssistantRuntime:
             return 'local_command'
         return None
 
+    def _try_fast_path(self, transcript_text: str) -> bool:
+        result = self.fast_router.try_execute(
+            transcript_text,
+            on_match=lambda route: self._transition(
+                AgentState.EXECUTING_TOOL,
+                f"fast path: {route}",
+            ),
+        )
+        if result is None:
+            return False
+
+        trace = self._active_command
+        if trace is not None:
+            trace.tool_count += len(result.tool_calls)
+            trace.tool_seconds += sum(
+                call.elapsed_seconds
+                for call in result.tool_calls
+            )
+            trace.reply = result.reply
+
+        for call in result.tool_calls:
+            status = "success" if call.success else "failed"
+            print(
+                f"FAST TOOL {call.name}({call.arguments}) "
+                f"-> {status} ({call.elapsed_seconds:.3f}s)"
+            )
+
+        self.metrics.log(
+            "fast_path_completed",
+            data={
+                "command_id": (
+                    trace.command_id if trace else None
+                ),
+                "conversation_id": self.conversation.session_id,
+                "route": result.route,
+                "success": result.success,
+                "elapsed_seconds": result.elapsed_seconds,
+                "tool_count": len(result.tool_calls),
+                "gpt_bypassed": True,
+            },
+            private={"reply": result.reply},
+        )
+        print(
+            f"FAST PATH [{result.route} | "
+            f"{result.elapsed_seconds:.3f}s | GPT bypassed]"
+        )
+        self._local_reply(result.reply)
+        return True
+
     def _ask_agent(self, transcript_text: str) -> None:
         self._transition(AgentState.THINKING, 'transcription ready')
         print('THINKING...', flush=True)
@@ -452,6 +504,9 @@ class VoiceAssistantRuntime:
             return
         if local_result is not None:
             self._after_turn(outcome=local_result)
+            return
+        if self._try_fast_path(transcript_text):
+            self._after_turn(outcome="fast_path")
             return
         self._ask_agent(transcript_text)
         self._after_turn(outcome='success')
@@ -528,10 +583,13 @@ class VoiceAssistantRuntime:
             self._finish_command('stopped')
             self._end_conversation('runtime_stopped')
             try:
-                self.synthesizer.close()
+                self.agent.close()
             finally:
                 try:
-                    self.state.stop(reason='runtime exited')
+                    self.synthesizer.close()
                 finally:
-                    self.metrics.close()
+                    try:
+                        self.state.stop(reason='runtime exited')
+                    finally:
+                        self.metrics.close()
         return 0

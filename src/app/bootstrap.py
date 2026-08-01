@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 
 from src.audio import AudioConfig, MicrophoneStream
+from src.browser import BrowserAutomationConfig
 from src.conversation import ConversationConfig, ConversationSession
+from src.fastpath import FastPathConfig, LocalCommandRouter
 from src.llm import AgentConfig, JarvisAgent
 from src.metrics import JsonlMetricsLogger, MetricsConfig
 from src.speech import (
@@ -15,6 +17,7 @@ from src.stt import (
     SpeechRecognizer,
     SpeechRecognizerConfig,
 )
+from src.tools import build_default_tool_registry
 from src.tts import (
     SpeechSynthesizer,
     SpeechSynthesizerConfig,
@@ -164,6 +167,33 @@ def build_runtime(
             f"{warmup_seconds:.2f}s."
         )
 
+    browser_config = BrowserAutomationConfig(
+        enabled=args.browser_automation,
+        headless=args.browser_headless,
+        profile_directory=args.browser_profile_dir,
+        navigation_timeout_seconds=(
+            args.browser_navigation_timeout
+        ),
+        action_timeout_seconds=(
+            args.browser_action_timeout
+        ),
+        max_page_text_characters=(
+            args.browser_max_page_text
+        ),
+    )
+    tool_registry = build_default_tool_registry(
+        browser_config=browser_config
+    )
+    fast_router = LocalCommandRouter(
+        tool_registry,
+        FastPathConfig(
+            enabled=(
+                args.fast_path_enabled
+                and args.tools_enabled
+            )
+        ),
+    )
+
     print(
         f"Connecting GPT model "
         f"'{args.llm_model}'..."
@@ -186,7 +216,8 @@ def build_runtime(
                 args.tools_enabled
             ),
             vision_detail=args.vision_detail,
-        )
+        ),
+        tool_registry=tool_registry,
     )
 
     print(
@@ -333,6 +364,15 @@ def build_runtime(
     print(f"Follow-up wait : {args.followup_timeout:.1f} s")
     print(f"Max turns      : {args.max_conversation_turns}")
     print(
+        f"Browser tools  : "
+        f"{'enabled' if args.browser_automation else 'disabled'} "
+        f"({'headless' if args.browser_headless else 'headed'})"
+    )
+    print(
+        f"Fast path      : "
+        f"{'enabled' if args.fast_path_enabled and args.tools_enabled else 'disabled'}"
+    )
+    print(
         f"State logging  : "
         f"{'visible' if args.show_state_transitions else 'hidden'}"
     )
@@ -390,4 +430,5 @@ def build_runtime(
         synthesizer=synthesizer,
         metrics=metrics,
         conversation=conversation,
+        fast_router=fast_router,
     )

@@ -33,3 +33,11 @@ include_text = false
 enabled = true
 followup_timeout_seconds = 12.0
 max_turns = 8
+
+
+[browser]
+enabled = true
+headless = false
+
+[fast_path]
+enabled = true

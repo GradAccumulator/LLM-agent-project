@@ -50,6 +50,8 @@ class ToolCallRecord:
 class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, ToolSpec] = {}
+        self._closers: list[Callable[[], Any]] = []
+        self._closed = False
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -61,6 +63,25 @@ class ToolRegistry:
             tool.as_openai_tool()
             for tool in self._tools.values()
         ]
+
+    def register_closer(
+        self,
+        closer: Callable[[], Any],
+    ) -> None:
+        if self._closed:
+            raise RuntimeError("Tool registry is already closed.")
+        self._closers.append(closer)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        for closer in reversed(self._closers):
+            try:
+                closer()
+            except Exception:
+                pass
+        self._closers.clear()
 
     def register(self, tool: ToolSpec) -> None:
         name = tool.name.strip()

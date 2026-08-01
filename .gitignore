@@ -14,3 +14,6 @@ models/
 notes/
 screenshots/
 config/user.toml
+browser_profile/
+playwright-report/
+test-results/

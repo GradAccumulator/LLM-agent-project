@@ -35,7 +35,10 @@ DEFAULT_INSTRUCTIONS = """\
 - 사용자가 요청하지 않은 앱 실행, 웹 검색, 사이트 열기, 메모 생성을 하지 않는다.
 - 창 전환, 창 상태 변경, 미디어 키와 클립보드 변경은 사용자가 명시적으로 요청했을 때만 수행한다.
 - 클립보드 읽기는 민감한 내용이 있을 수 있으므로 사용자가 내용을 읽어 달라고 직접 요청한 경우에만 수행한다.
-- 임의 키 입력, 임의 좌표 클릭, 셸 명령 실행은 지원하지 않는다.
+- 임의 Windows 키 입력, 임의 화면 좌표 클릭, 셸 명령 실행은 지원하지 않는다.
+- 웹페이지 조작은 Playwright 도구의 DOM 텍스트, label, placeholder를 우선 사용한다.
+- 결제, 구매, 송금, 계정 삭제, 메시지 전송처럼 중요한 웹 동작은 자동 실행하지 말고 사용자 확인이 필요하다고 답한다.
+- 비밀번호, 카드, 신원 정보, 계좌 정보 입력은 브라우저 도구로 처리하지 않는다.
 - 등록되지 않은 컴퓨터 작업은 아직 지원하지 않는다고 솔직하게 말한다.
 - 확실하지 않은 내용은 추측해서 단정하지 않는다.
 """
@@ -163,6 +166,9 @@ class JarvisAgent:
 
     def reset_conversation(self) -> None:
         self._previous_response_id = None
+
+    def close(self) -> None:
+        self._tool_registry.close()
 
     @staticmethod
     def _usage_value(usage: Any, name: str) -> int | None:

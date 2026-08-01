@@ -290,6 +290,51 @@ def build_parser(
 
     _bool_pair(
         parser,
+        destination="browser_automation",
+        positive=("--browser-automation",),
+        negative=("--disable-browser-automation",),
+        positive_help="Enable Playwright browser tools.",
+        negative_help="Disable Playwright browser tools.",
+    )
+    _bool_pair(
+        parser,
+        destination="browser_headless",
+        positive=("--browser-headless",),
+        negative=("--browser-headed",),
+        positive_help="Run Playwright Chromium without a visible window.",
+        negative_help="Show the Playwright Chromium window.",
+    )
+    parser.add_argument(
+        "--browser-profile-dir",
+        type=Path,
+        default=Path("browser_profile"),
+    )
+    parser.add_argument(
+        "--browser-navigation-timeout",
+        type=float,
+        default=20.0,
+    )
+    parser.add_argument(
+        "--browser-action-timeout",
+        type=float,
+        default=10.0,
+    )
+    parser.add_argument(
+        "--browser-max-page-text",
+        type=int,
+        default=12000,
+    )
+    _bool_pair(
+        parser,
+        destination="fast_path_enabled",
+        positive=("--fast-path",),
+        negative=("--disable-fast-path",),
+        positive_help="Execute simple deterministic commands without GPT.",
+        negative_help="Send all non-local commands through GPT.",
+    )
+
+    _bool_pair(
+        parser,
         destination="show_state_transitions",
         positive=("--state-transitions",),
         negative=("--hide-state-transitions",),
@@ -338,6 +383,9 @@ def build_parser(
         llm_memory=True,
         tools_enabled=True,
         tts_enabled=True,
+        browser_automation=True,
+        browser_headless=False,
+        fast_path_enabled=True,
         show_state_transitions=True,
         metrics_enabled=True,
         metrics_include_text=False,

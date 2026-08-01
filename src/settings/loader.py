@@ -162,6 +162,25 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
             "max_conversation_turns", int, _as_int
         ),
     },
+    "browser": {
+        "enabled": _SettingSpec("browser_automation", bool),
+        "headless": _SettingSpec("browser_headless", bool),
+        "profile_directory": _SettingSpec(
+            "browser_profile_dir", str, _as_path
+        ),
+        "navigation_timeout_seconds": _SettingSpec(
+            "browser_navigation_timeout", (int, float), _as_float
+        ),
+        "action_timeout_seconds": _SettingSpec(
+            "browser_action_timeout", (int, float), _as_float
+        ),
+        "max_page_text_characters": _SettingSpec(
+            "browser_max_page_text", int, _as_int
+        ),
+    },
+    "fast_path": {
+        "enabled": _SettingSpec("fast_path_enabled", bool),
+    },
     "runtime": {
         "show_state_transitions": _SettingSpec(
             "show_state_transitions", bool
@@ -319,6 +338,9 @@ def _validate_values(values: dict[str, Any]) -> None:
         "max_saved_audio_files",
         "followup_timeout",
         "max_conversation_turns",
+        "browser_navigation_timeout",
+        "browser_action_timeout",
+        "browser_max_page_text",
     }
     for name in positive:
         if name in values and values[name] <= 0:
