@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, Callable
 
 from dotenv import load_dotenv
 
@@ -63,6 +63,16 @@ class AgentReply:
     output_tokens: int | None
     total_tokens: int | None
     tool_calls: tuple[ToolCallRecord, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ToolLifecycleEvent:
+    phase: str
+    name: str
+    success: bool | None = None
+
+
+ToolLifecycleCallback = Callable[[ToolLifecycleEvent], None]
 
 
 class JarvisAgent:
@@ -336,7 +346,12 @@ class JarvisAgent:
         except Exception as exc:
             raise self._friendly_api_error(exc) from exc
 
-    def ask(self, user_text: str) -> AgentReply:
+    def ask(
+        self,
+        user_text: str,
+        *,
+        on_tool_event: ToolLifecycleCallback | None = None,
+    ) -> AgentReply:
         user_text = user_text.strip()
         if not user_text:
             raise ValueError("LLM input text must not be empty.")
@@ -394,10 +409,29 @@ class JarvisAgent:
             input_items.extend(getattr(response, "output", ()))
 
             for call in function_calls:
+                tool_name = str(getattr(call, "name", ""))
+                if on_tool_event is not None:
+                    on_tool_event(
+                        ToolLifecycleEvent(
+                            phase="started",
+                            name=tool_name,
+                        )
+                    )
+
                 result = self._tool_registry.execute(
-                    str(getattr(call, "name", "")),
+                    tool_name,
                     str(getattr(call, "arguments", "{}")),
                 )
+
+                if on_tool_event is not None:
+                    on_tool_event(
+                        ToolLifecycleEvent(
+                            phase="finished",
+                            name=result.name,
+                            success=result.success,
+                        )
+                    )
+
                 tool_records.append(
                     ToolCallRecord(
                         name=result.name,

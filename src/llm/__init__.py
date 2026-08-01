@@ -1,3 +1,15 @@
-from .agent import AgentConfig, AgentReply, JarvisAgent
+from .agent import (
+    AgentConfig,
+    AgentReply,
+    JarvisAgent,
+    ToolLifecycleCallback,
+    ToolLifecycleEvent,
+)
 
-__all__ = ["AgentConfig", "AgentReply", "JarvisAgent"]
+__all__ = [
+    "AgentConfig",
+    "AgentReply",
+    "JarvisAgent",
+    "ToolLifecycleCallback",
+    "ToolLifecycleEvent",
+]

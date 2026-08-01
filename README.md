@@ -1,162 +1,144 @@
-# LLM Agent — Step 7.2.1: CUDA DLL Hotfix
+# LLM Agent — Step 8: Explicit State Machine
 
-음성 인식과 음성 출력의 체감 지연을 줄인 성능 우선 버전입니다.
+기존의 거대한 `while True` 음성 파이프라인을 명시적인 상태 머신과 런타임
+클래스로 분리했습니다. 기능은 유지하면서 이후 연속 대화, 말 끊기,
+비동기 TTS, GUI 상태 표시를 붙일 수 있는 구조로 바꿨습니다.
 
-## 핵심 변경
-
-### 명령이 끝났다고 판단하는 시간
-
-```text
-기존: 0.8초 침묵
-변경: 0.4초 침묵
-```
-
-말을 끝낸 뒤 STT가 시작되기까지 기다리는 시간을 약 0.4초 줄였습니다.
-
-### Faster-Whisper
+## 상태
 
 ```text
-모델: turbo
-장치: CUDA 우선 자동 선택
-연산: float16
-beam size: 1
-best_of: 1
-CPU fallback threads: 16
-workers: 2
-startup warm-up: 활성화
-timestamps: 비활성화
+STARTING
+LISTENING
+CAPTURING
+TRANSCRIBING
+THINKING
+EXECUTING_TOOL
+SPEAKING
+ERROR
+RECOVERING
+STOPPED
 ```
 
-첫 명령에서 CUDA 초기화 때문에 느려지는 현상을 줄이기 위해 프로그램 시작
-시 무음 추론을 한 번 수행합니다.
-
-### Edge Neural TTS
-
-기존 구현은 답변마다 새 Python 프로세스를 실행해 `edge-playback`을
-호출했습니다. 이번 버전은:
+정상적인 명령 흐름:
 
 ```text
-Edge TTS Python API를 프로세스 안에서 직접 사용
-pygame 오디오 믹서를 시작할 때 한 번만 초기화
-첫 문장을 짧은 조각으로 분리
-뒤쪽 문장들은 최대 3개 요청으로 병렬 합성
-첫 조각이 준비되는 즉시 재생
+STARTING
+→ LISTENING
+→ CAPTURING
+→ TRANSCRIBING
+→ THINKING
+→ EXECUTING_TOOL
+→ THINKING
+→ SPEAKING
+→ LISTENING
 ```
 
-따라서 긴 답변 전체의 음성이 완성될 때까지 기다리지 않고, 먼저 생성된
-첫 부분부터 읽기 시작합니다.
+도구를 사용하지 않거나 TTS가 꺼져 있으면 필요 없는 상태는 건너뜁니다.
 
-
-## CUDA DLL 자동 탐색 및 폴백 수정
-
-Windows에서 다음 폴더들을 자동으로 DLL 검색 경로에 등록합니다.
+## 실행 로그 예시
 
 ```text
-CUDA_PATH\bin
-C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v*\bin
-C:\Program Files\NVIDIA\CUDNN\v*\bin\*
-PyTorch의 torch\lib
+[STATE] STARTING -> LISTENING | startup completed
+[STATE] LISTENING -> CAPTURING | wake word detected
+[STATE] CAPTURING -> TRANSCRIBING | speech capture completed
+[STATE] TRANSCRIBING -> THINKING | transcription ready
+[STATE] THINKING -> EXECUTING_TOOL | tool started: inspect_screen
+[STATE] EXECUTING_TOOL -> THINKING | tool finished: inspect_screen (success)
+[STATE] THINKING -> SPEAKING | speaking response
+[STATE] SPEAKING -> LISTENING | response completed
 ```
 
-또한 CTranslate2가 모델 생성 때가 아니라 첫 추론 시 CUDA DLL을 불러오는
-경우를 처리했습니다. 기본 `--stt-device auto`에서는 GPU 워밍업이 실패해도
-프로그램이 종료되지 않고 CPU `int8`로 다시 초기화됩니다.
+각 줄에는 이전 상태에서 머문 시간도 함께 표시됩니다.
 
-GPU 가속을 사용하려면 Windows에 다음 DLL이 실제로 설치되어 있어야 합니다.
-
-```text
-cublas64_12.dll
-cudnn_ops64_9.dll
-```
-
-확인:
+상태 로그를 숨기려면:
 
 ```powershell
-where.exe cublas64_12.dll
-where.exe cudnn_ops64_9.dll
+python -m src.main --hide-state-transitions
 ```
 
-CUDA Toolkit 경로에 파일이 있지만 `where.exe`에서 찾지 못한다면 현재
-PowerShell에서 임시로 다음처럼 추가할 수 있습니다.
+## 오류 복구
+
+명령 처리 중 복구 가능한 오류가 발생하면:
+
+```text
+현재 상태
+→ ERROR
+→ RECOVERING
+→ LISTENING
+```
+
+순서로 마이크 큐, 웨이크워드, VAD 상태를 초기화하고 다시 대기합니다.
+
+복구 대기 시간 변경:
 
 ```powershell
-$env:PATH = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\bin;$env:PATH"
-python -m src.main
+python -m src.main --recovery-delay 0.5
 ```
 
+## 새 구조
 
-## 설치
+```text
+src/
+├── app/
+│   ├── cli.py          # CLI 옵션
+│   ├── bootstrap.py    # STT, LLM, TTS 등 객체 생성
+│   └── runtime.py      # 음성 명령 실행 흐름
+├── core/
+│   └── state_machine.py
+├── llm/
+│   └── agent.py        # 도구 시작·종료 이벤트 제공
+└── main.py             # 작은 진입점
+```
+
+`main.py`는 인자 처리와 시작 오류 처리만 맡고, 실제 음성 비서 흐름은
+`VoiceAssistantRuntime`이 담당합니다.
+
+## 상태 전이 검증
+
+허용되지 않은 상태 전이는 즉시 `InvalidStateTransition`을 발생시킵니다.
+
+예를 들어 시작 직후 `STARTING → SPEAKING`은 허용되지 않습니다. 이런 검증은
+끼어들기나 비동기 처리를 추가할 때 잘못된 상태 경쟁을 빠르게 발견하는 데
+도움이 됩니다.
+
+## 테스트
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+검사 항목:
+
+- 정상 음성 명령 상태 순서
+- 잘못된 상태 전이 차단
+- 오류 복구 경로
+- 상태 리스너 호출
+
+## 설치 및 실행
 
 ```powershell
 python -m pip install -r requirements.txt
-```
-
-## 실행
-
-```powershell
 python -m src.main
 ```
 
-## 기본 저지연 설정
+기존 설정은 유지됩니다.
 
 ```text
-end silence       : 0.4초
-STT beam          : 1
-STT best-of       : 1
-STT compute       : float16
-STT warm-up       : 활성화
-첫 TTS 조각       : 최대 80자
-이후 TTS 조각     : 최대 180자
-TTS 병렬 요청     : 3
-오디오 버퍼       : 256
+호출어: Hey Jarvis
+웨이크워드 임계값: 0.45
+STT: Faster-Whisper turbo / CUDA float16 우선
+LLM: gpt-5.6-luna
+화면 분석: inspect_screen
+TTS: Edge Neural TTS
 ```
-
-## 더 공격적으로 줄이기
-
-```powershell
-python -m src.main `
-  --end-silence 0.32 `
-  --tts-first-chunk-characters 55 `
-  --tts-chunk-characters 140 `
-  --tts-parallel-requests 4
-```
-
-`--end-silence`를 너무 낮추면 문장 중간의 짧은 쉼을 명령 종료로 잘못 판단할
-수 있습니다. 기본값 0.4초부터 테스트하는 것을 권장합니다.
-
-## 정확도를 조금 올리고 싶을 때
-
-속도 대신 STT 정확도를 조금 더 우선하려면:
-
-```powershell
-python -m src.main --stt-beam-size 3 --stt-best-of 3
-```
-
-## 성능 확인
-
-STT 출력:
-
-```text
-TRANSCRIPT [ko 100.0% | 0.21s]: 계산기 켜줘
-```
-
-TTS 출력:
-
-```text
-TTS LATENCY: first_audio=0.63s | chunks=2 | total=3.14s
-```
-
-`first_audio`가 GPT 답변 생성 후 실제 음성이 시작되기까지의 핵심 수치입니다.
-
-## 참고
-
-Edge TTS의 음성 생성은 온라인 서비스이므로 RTX 5090 사용률을 높이는 것만으로
-네트워크 왕복 지연까지 줄일 수는 없습니다. 대신 이번 버전에서는 프로세스
-실행 비용을 없애고, 짧은 조각과 병렬 요청으로 첫 음성이 더 빨리 나오도록
-구조를 바꿨습니다.
 
 ## 커밋 메시지
 
 ```bash
-git commit -m "Fix Windows CUDA DLL discovery and STT warm-up fallback"
+git commit -m "Refactor voice pipeline into an explicit state machine"
 ```
+
+## 다음 단계
+
+다음은 CLI 기본값을 TOML 설정 파일로 옮기고, 상태별 지연 시간을 JSONL 또는
+SQLite에 기록하는 설정·성능 로깅 단계가 적합합니다.
