@@ -6,6 +6,7 @@ from datetime import datetime
 from math import ceil
 from pathlib import Path
 import wave
+from typing import Callable
 
 import numpy as np
 
@@ -72,8 +73,22 @@ class SpeechCapture:
         self.config = config
         self.detector = detector
 
-    def capture(self, microphone: MicrophoneStream) -> CaptureResult:
+    def capture(
+        self,
+        microphone: MicrophoneStream,
+        *,
+        start_timeout_seconds: float | None = None,
+        on_speech_start: Callable[[], None] | None = None,
+    ) -> CaptureResult:
         self.detector.reset()
+
+        effective_start_timeout = (
+            self.config.start_timeout_seconds
+            if start_timeout_seconds is None
+            else start_timeout_seconds
+        )
+        if effective_start_timeout <= 0:
+            raise ValueError('start_timeout_seconds must be positive.')
 
         frame_seconds = (
             microphone.target_block_size / self.config.sample_rate
@@ -104,10 +119,12 @@ class SpeechCapture:
 
                 if is_speech:
                     speech_started = True
+                    if on_speech_start is not None:
+                        on_speech_start()
                     captured.extend(pre_roll)
                     speech_seconds += frame_seconds
                     silence_seconds = 0.0
-                elif elapsed_seconds >= self.config.start_timeout_seconds:
+                elif elapsed_seconds >= effective_start_timeout:
                     return CaptureResult(
                         samples=np.empty(0, dtype=np.int16),
                         speech_detected=False,

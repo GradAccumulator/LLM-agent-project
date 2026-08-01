@@ -10,16 +10,17 @@ from typing import Callable, Iterable
 
 
 class AgentState(str, Enum):
-    STARTING = "STARTING"
-    LISTENING = "LISTENING"
-    CAPTURING = "CAPTURING"
-    TRANSCRIBING = "TRANSCRIBING"
-    THINKING = "THINKING"
-    EXECUTING_TOOL = "EXECUTING_TOOL"
-    SPEAKING = "SPEAKING"
-    ERROR = "ERROR"
-    RECOVERING = "RECOVERING"
-    STOPPED = "STOPPED"
+    STARTING = 'STARTING'
+    SLEEPING = 'SLEEPING'
+    AWAITING_SPEECH = 'AWAITING_SPEECH'
+    CAPTURING = 'CAPTURING'
+    TRANSCRIBING = 'TRANSCRIBING'
+    THINKING = 'THINKING'
+    EXECUTING_TOOL = 'EXECUTING_TOOL'
+    SPEAKING = 'SPEAKING'
+    ERROR = 'ERROR'
+    RECOVERING = 'RECOVERING'
+    STOPPED = 'STOPPED'
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,60 +49,40 @@ StateListener = Callable[[StateTransition], None]
 
 def _build_allowed_transitions() -> dict[AgentState, frozenset[AgentState]]:
     normal: dict[AgentState, set[AgentState]] = {
-        AgentState.STARTING: {
-            AgentState.LISTENING,
-        },
-        AgentState.LISTENING: {
-            AgentState.CAPTURING,
-        },
-        AgentState.CAPTURING: {
-            AgentState.TRANSCRIBING,
-            AgentState.LISTENING,
-        },
+        AgentState.STARTING: {AgentState.SLEEPING},
+        AgentState.SLEEPING: {AgentState.AWAITING_SPEECH},
+        AgentState.AWAITING_SPEECH: {AgentState.CAPTURING, AgentState.SLEEPING},
+        AgentState.CAPTURING: {AgentState.TRANSCRIBING},
         AgentState.TRANSCRIBING: {
             AgentState.THINKING,
             AgentState.SPEAKING,
-            AgentState.LISTENING,
+            AgentState.AWAITING_SPEECH,
+            AgentState.SLEEPING,
         },
         AgentState.THINKING: {
             AgentState.EXECUTING_TOOL,
             AgentState.SPEAKING,
-            AgentState.LISTENING,
+            AgentState.AWAITING_SPEECH,
+            AgentState.SLEEPING,
         },
-        AgentState.EXECUTING_TOOL: {
-            AgentState.THINKING,
-        },
-        AgentState.SPEAKING: {
-            AgentState.LISTENING,
-        },
-        AgentState.ERROR: {
-            AgentState.RECOVERING,
-        },
-        AgentState.RECOVERING: {
-            AgentState.LISTENING,
-        },
+        AgentState.EXECUTING_TOOL: {AgentState.THINKING},
+        AgentState.SPEAKING: {AgentState.AWAITING_SPEECH, AgentState.SLEEPING},
+        AgentState.ERROR: {AgentState.RECOVERING},
+        AgentState.RECOVERING: {AgentState.SLEEPING},
         AgentState.STOPPED: set(),
     }
-
-    # Any live state may fail or stop. ERROR may also stop.
     for state in AgentState:
         if state not in {AgentState.ERROR, AgentState.STOPPED}:
             normal[state].add(AgentState.ERROR)
         if state is not AgentState.STOPPED:
             normal[state].add(AgentState.STOPPED)
-
-    return {
-        state: frozenset(targets)
-        for state, targets in normal.items()
-    }
+    return {state: frozenset(targets) for state, targets in normal.items()}
 
 
 _ALLOWED_TRANSITIONS = _build_allowed_transitions()
 
 
 class AgentStateMachine:
-    """Thread-safe state machine for the voice-assistant lifecycle."""
-
     def __init__(
         self,
         *,
@@ -110,15 +91,12 @@ class AgentStateMachine:
         listeners: Iterable[StateListener] = (),
     ) -> None:
         if history_limit <= 0:
-            raise ValueError("history_limit must be positive.")
-
+            raise ValueError('history_limit must be positive.')
         self._lock = RLock()
         self._current = initial
         self._entered_monotonic = monotonic()
         self._entered_at = datetime.now().astimezone()
-        self._history: deque[StateTransition] = deque(
-            maxlen=history_limit
-        )
+        self._history: deque[StateTransition] = deque(maxlen=history_limit)
         self._listeners: list[StateListener] = list(listeners)
 
     @property
@@ -152,34 +130,21 @@ class AgentStateMachine:
         with self._lock:
             return target in _ALLOWED_TRANSITIONS[self._current]
 
-    def transition(
-        self,
-        target: AgentState,
-        *,
-        reason: str,
-    ) -> StateTransition:
-        reason = reason.strip() or "unspecified"
-
+    def transition(self, target: AgentState, *, reason: str) -> StateTransition:
+        reason = reason.strip() or 'unspecified'
         with self._lock:
             previous = self._current
             if target is previous:
-                raise InvalidStateTransition(
-                    f"State is already {target.value}."
-                )
-
+                raise InvalidStateTransition(f'State is already {target.value}.')
             allowed = _ALLOWED_TRANSITIONS[previous]
             if target not in allowed:
-                allowed_text = ", ".join(
-                    state.value for state in sorted(
-                        allowed,
-                        key=lambda item: item.value,
-                    )
-                ) or "<none>"
+                allowed_text = ', '.join(
+                    state.value for state in sorted(allowed, key=lambda item: item.value)
+                ) or '<none>'
                 raise InvalidStateTransition(
-                    f"Invalid transition {previous.value} -> "
-                    f"{target.value}. Allowed: {allowed_text}."
+                    f'Invalid transition {previous.value} -> {target.value}. '
+                    f'Allowed: {allowed_text}.'
                 )
-
             now_monotonic = monotonic()
             occurred_at = datetime.now().astimezone()
             transition = StateTransition(
@@ -187,21 +152,15 @@ class AgentStateMachine:
                 current=target,
                 reason=reason,
                 occurred_at=occurred_at,
-                previous_state_seconds=(
-                    now_monotonic - self._entered_monotonic
-                ),
+                previous_state_seconds=now_monotonic - self._entered_monotonic,
             )
-
             self._current = target
             self._entered_monotonic = now_monotonic
             self._entered_at = occurred_at
             self._history.append(transition)
             listeners = tuple(self._listeners)
-
-        # Listeners run outside the lock to avoid deadlocks.
         for listener in listeners:
             listener(transition)
-
         return transition
 
     def stop(self, *, reason: str) -> StateTransition | None:

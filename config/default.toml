@@ -1,0 +1,63 @@
+[audio]
+preferred_device = "BlackShark"
+start_timeout_seconds = 4.0
+end_silence_seconds = 0.4
+max_command_seconds = 15.0
+save_audio = true
+save_directory = "recordings"
+
+[wakeword]
+threshold = 0.45
+cooldown_seconds = 2.0
+
+[vad]
+threshold = 0.50
+
+[stt]
+model = "turbo"
+language = "ko"
+device = "auto"
+compute_type = "float16"
+beam_size = 1
+best_of = 1
+model_directory = "models/faster-whisper"
+workers = 2
+warmup = true
+cpu_threads = 16
+
+[llm]
+model = "gpt-5.6-luna"
+reasoning = "low"
+max_output_tokens = 512
+timeout_seconds = 60.0
+memory = true
+tools = true
+max_tool_rounds = 4
+vision_detail = "original"
+
+[tts]
+enabled = true
+voice = "ko-KR-InJoonNeural"
+rate_percent = 0
+volume = 100
+pitch_hz = 0
+max_characters = 1200
+first_chunk_characters = 80
+chunk_characters = 180
+parallel_requests = 3
+mixer_buffer = 256
+
+[conversation]
+enabled = true
+followup_timeout_seconds = 12.0
+max_turns = 8
+
+[runtime]
+show_state_transitions = true
+recovery_delay_seconds = 0.25
+
+[metrics]
+enabled = true
+directory = "logs"
+include_text = false
+flush_each_event = true

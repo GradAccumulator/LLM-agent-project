@@ -13,3 +13,4 @@ models/
 !.env.example
 notes/
 screenshots/
+config/user.toml

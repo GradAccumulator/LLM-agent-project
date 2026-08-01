@@ -70,6 +70,7 @@ class ToolLifecycleEvent:
     phase: str
     name: str
     success: bool | None = None
+    elapsed_seconds: float | None = None
 
 
 ToolLifecycleCallback = Callable[[ToolLifecycleEvent], None]
@@ -429,6 +430,7 @@ class JarvisAgent:
                             phase="finished",
                             name=result.name,
                             success=result.success,
+                            elapsed_seconds=result.elapsed_seconds,
                         )
                     )
 
@@ -438,6 +440,7 @@ class JarvisAgent:
                         arguments=result.arguments,
                         success=result.success,
                         output=result.output,
+                        elapsed_seconds=result.elapsed_seconds,
                     )
                 )
                 output_content = self._tool_output_content(

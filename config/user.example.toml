@@ -1,0 +1,34 @@
+# 이 파일을 config/user.toml로 복사한 뒤 필요한 값만 바꾸세요.
+
+[audio]
+preferred_device = "BlackShark"
+end_silence_seconds = 0.4
+
+[wakeword]
+threshold = 0.45
+
+[stt]
+device = "auto"
+compute_type = "float16"
+beam_size = 1
+
+[llm]
+model = "gpt-5.6-luna"
+reasoning = "low"
+
+[tts]
+enabled = true
+voice = "ko-KR-InJoonNeural"
+rate_percent = 4
+pitch_hz = -6
+
+[metrics]
+enabled = true
+# transcript와 답변까지 저장하려면 true.
+include_text = false
+
+
+[conversation]
+enabled = true
+followup_timeout_seconds = 12.0
+max_turns = 8
