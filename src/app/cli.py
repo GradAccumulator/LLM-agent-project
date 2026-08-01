@@ -62,6 +62,11 @@ def build_parser(
     )
 
     parser.add_argument(
+        "--list-memories",
+        action="store_true",
+        help="List saved local aliases and preferences.",
+    )
+    parser.add_argument(
         "--list-browsers",
         action="store_true",
         help=(
@@ -294,6 +299,40 @@ def build_parser(
         "--tts-mixer-buffer",
         type=int,
         default=256,
+    )
+
+    _bool_pair(
+        parser,
+        destination="long_term_memory_enabled",
+        positive=("--long-term-memory",),
+        negative=("--disable-long-term-memory",),
+        positive_help="Enable explicit SQLite long-term memory.",
+        negative_help="Disable local long-term memory tools and context.",
+    )
+    parser.add_argument(
+        "--memory-database",
+        type=Path,
+        default=Path("data/jarvis_memory.db"),
+    )
+    parser.add_argument(
+        "--memory-context-limit",
+        type=int,
+        default=20,
+    )
+    parser.add_argument(
+        "--memory-context-characters",
+        type=int,
+        default=4000,
+    )
+    parser.add_argument(
+        "--memory-max-entries",
+        type=int,
+        default=200,
+    )
+    parser.add_argument(
+        "--memory-max-value-characters",
+        type=int,
+        default=2048,
     )
 
     _bool_pair(
@@ -542,6 +581,7 @@ def build_parser(
         llm_memory=True,
         tools_enabled=True,
         tts_enabled=True,
+        long_term_memory_enabled=True,
         planning_enabled=True,
         streaming_enabled=True,
         continuous_conversation=True,
@@ -597,6 +637,7 @@ def print_effective_config(
         "print_config",
         "list_devices",
         "list_browsers",
+        "list_memories",
         "list_tts_voices",
     }
     values = {

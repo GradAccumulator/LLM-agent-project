@@ -175,6 +175,16 @@ class LocalCommandRouter:
         ),
     )
 
+    _SAVED_ALIAS_OPEN_PATTERN = re.compile(
+        r"^(.+?)(?:을|를)?\s*(?:열어줘|열어|켜줘|켜|실행해줘)$",
+        re.IGNORECASE,
+    )
+
+    _GENERIC_SEARCH_PATTERN = re.compile(
+        r"^(.+?)\s*(?:검색해줘|검색해|찾아줘|찾아봐)$",
+        re.IGNORECASE,
+    )
+
     _CLIPBOARD_WRITE_PATTERN = re.compile(
         r"^(.+?)(?:을|를)?\s*클립보드에\s*"
         r"(?:복사해줘|복사해|복사해주세요|저장해줘|저장해)$",
@@ -357,6 +367,23 @@ class LocalCommandRouter:
                         "open_website",
                         {"site": site},
                         lambda _data, alias=alias: f"{alias}를 열었습니다.",
+                    ),
+                )
+
+        memory_store = self.registry.memory_store
+        alias_match = self._SAVED_ALIAS_OPEN_PATTERN.match(original)
+        if alias_match and memory_store is not None:
+            alias_name = alias_match.group(1).strip()
+            if memory_store.resolve_alias(alias_name) is not None:
+                return _MatchedCommand(
+                    f"saved_alias:{alias_name}",
+                    lambda alias_name=alias_name: self._execute_one(
+                        f"saved_alias:{alias_name}",
+                        "open_saved_alias",
+                        {"alias": alias_name},
+                        lambda data, alias_name=alias_name: (
+                            f"{data.get('alias', alias_name)}을 열었습니다."
+                        ),
                     ),
                 )
 
@@ -543,6 +570,33 @@ class LocalCommandRouter:
                     lambda _data: f"{service}에서 {query}를 검색했습니다.",
                 ),
             )
+
+        generic_search = self._GENERIC_SEARCH_PATTERN.match(original)
+        if generic_search and memory_store is not None:
+            query = generic_search.group(1).strip()
+            engine = (
+                memory_store.get_preference("search_engine")
+                or memory_store.get_preference("검색 엔진")
+            )
+            if engine is not None:
+                engine = engine.strip().casefold()
+                if engine in {"google", "naver", "youtube"} and query:
+                    labels = {
+                        "google": "구글",
+                        "naver": "네이버",
+                        "youtube": "유튜브",
+                    }
+                    return _MatchedCommand(
+                        f"preferred_search:{engine}",
+                        lambda query=query, engine=engine: self._execute_one(
+                            f"preferred_search:{engine}",
+                            "search_browser",
+                            {"engine": engine, "query": query},
+                            lambda _data, query=query, engine=engine: (
+                                f"{labels[engine]}에서 {query}를 검색했습니다."
+                            ),
+                        ),
+                    )
 
         return None
 

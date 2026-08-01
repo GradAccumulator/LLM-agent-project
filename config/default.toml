@@ -50,6 +50,15 @@ mixer_buffer = 256
 
 
 
+
+[long_term_memory]
+enabled = true
+database = "data/jarvis_memory.db"
+context_limit = 20
+max_context_characters = 4000
+max_entries = 200
+max_value_characters = 2048
+
 [planning]
 enabled = true
 max_steps = 6

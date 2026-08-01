@@ -5,6 +5,8 @@ import json
 from time import perf_counter
 from typing import Any, Callable, Mapping
 
+from src.memory import LocalMemoryStore
+
 from src.planning import (
     TaskPlanTracker,
     is_action_tool,
@@ -61,11 +63,19 @@ class ToolCallRecord:
 
 
 class ToolRegistry:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        memory_store: LocalMemoryStore | None = None,
+    ) -> None:
         self._tools: dict[str, ToolSpec] = {}
         self._closers: list[Callable[[], Any]] = []
         self._closed = False
         self.plan_tracker = TaskPlanTracker()
+        self._memory_store = memory_store
+
+    @property
+    def memory_store(self) -> LocalMemoryStore | None:
+        return self._memory_store
 
     @property
     def names(self) -> tuple[str, ...]:

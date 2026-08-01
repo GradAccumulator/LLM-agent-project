@@ -162,6 +162,26 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
             "tts_mixer_buffer", int, _as_int
         ),
     },
+    "long_term_memory": {
+        "enabled": _SettingSpec(
+            "long_term_memory_enabled", bool
+        ),
+        "database": _SettingSpec(
+            "memory_database", str, _as_path
+        ),
+        "context_limit": _SettingSpec(
+            "memory_context_limit", int, _as_int
+        ),
+        "max_context_characters": _SettingSpec(
+            "memory_context_characters", int, _as_int
+        ),
+        "max_entries": _SettingSpec(
+            "memory_max_entries", int, _as_int
+        ),
+        "max_value_characters": _SettingSpec(
+            "memory_max_value_characters", int, _as_int
+        ),
+    },
     "planning": {
         "enabled": _SettingSpec(
             "planning_enabled", bool
@@ -411,6 +431,10 @@ def _validate_values(values: dict[str, Any]) -> None:
         "tts_chunk_characters",
         "tts_parallel_requests",
         "tts_mixer_buffer",
+        "memory_context_limit",
+        "memory_context_characters",
+        "memory_max_entries",
+        "memory_max_value_characters",
         "planning_max_steps",
         "streaming_minimum_characters",
         "streaming_maximum_characters",

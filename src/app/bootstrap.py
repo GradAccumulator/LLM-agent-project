@@ -11,6 +11,10 @@ from src.browser import BrowserAutomationConfig
 from src.conversation import ConversationConfig, ConversationSession
 from src.fastpath import FastPathConfig, LocalCommandRouter
 from src.llm import AgentConfig, JarvisAgent
+from src.memory import (
+    LocalMemoryStore,
+    MemoryStoreConfig,
+)
 from src.metrics import JsonlMetricsLogger, MetricsConfig
 from src.speech import (
     CaptureConfig,
@@ -214,9 +218,24 @@ def build_runtime(
             args.browser_max_page_text
         ),
     )
+    memory_store = LocalMemoryStore(
+        MemoryStoreConfig(
+            enabled=args.long_term_memory_enabled,
+            database=args.memory_database,
+            context_limit=args.memory_context_limit,
+            max_context_characters=(
+                args.memory_context_characters
+            ),
+            max_entries=args.memory_max_entries,
+            max_value_characters=(
+                args.memory_max_value_characters
+            ),
+        )
+    )
     tool_registry = build_default_tool_registry(
         browser_config=browser_config,
         browser_control_mode=args.browser_control_mode,
+        memory_store=memory_store,
     )
     fast_router = LocalCommandRouter(
         tool_registry,
@@ -256,6 +275,15 @@ def build_runtime(
             ),
             planning_max_repair_attempts=(
                 args.planning_max_repair_attempts
+            ),
+            long_term_memory_enabled=(
+                args.long_term_memory_enabled
+            ),
+            memory_context_limit=(
+                args.memory_context_limit
+            ),
+            memory_context_characters=(
+                args.memory_context_characters
             ),
         ),
         tool_registry=tool_registry,
@@ -397,6 +425,14 @@ def build_runtime(
     print(
         f"TTS output     : "
         f"{'enabled' if args.tts_enabled else 'disabled'}"
+    )
+    print(
+        f"Long memory   : "
+        f"{'enabled' if args.long_term_memory_enabled else 'disabled'}"
+    )
+    print(
+        f"Memory DB      : {args.memory_database} "
+        f"({memory_store.count()} item(s))"
     )
     print(
         f"Task planning  : "

@@ -14,10 +14,12 @@ from src.browser import (
     BrowserController,
     SystemBrowserController,
 )
+from src.memory import LocalMemoryStore
 
 from .browser_tools import register_browser_tools
 from .registry import ToolRegistry, ToolSpec
 from .planning_tools import register_planning_tools
+from .memory_tools import register_memory_tools
 from .windows_desktop import (
     focus_window,
     get_active_window,
@@ -335,8 +337,9 @@ def build_default_tool_registry(
     browser_config: BrowserAutomationConfig | None = None,
     *,
     browser_control_mode: str = "system",
+    memory_store: LocalMemoryStore | None = None,
 ) -> ToolRegistry:
-    registry = ToolRegistry()
+    registry = ToolRegistry(memory_store=memory_store)
     register_planning_tools(registry)
 
     effective_browser_config = (
@@ -355,6 +358,14 @@ def build_default_tool_registry(
         if browser_control_mode == "system":
             return system_browser_controller.open_page(url)
         return browser_controller.open_page(url)
+
+    if memory_store is not None and memory_store.enabled:
+        register_memory_tools(
+            registry,
+            memory_store,
+            open_url=open_selected_page,
+        )
+        registry.register_closer(memory_store.close)
 
     def open_application_selected(
         application: str,

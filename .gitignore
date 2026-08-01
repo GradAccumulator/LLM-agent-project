@@ -17,3 +17,6 @@ config/user.toml
 browser_profile/
 playwright-report/
 test-results/
+data/*.db
+data/*.db-wal
+data/*.db-shm

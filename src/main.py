@@ -23,6 +23,36 @@ def main() -> int:
         print(format_installed_browsers())
         return 0
 
+    if args.list_memories:
+        from src.memory import (
+            LocalMemoryStore,
+            MemoryStoreConfig,
+        )
+
+        with LocalMemoryStore(
+            MemoryStoreConfig(
+                enabled=True,
+                database=args.memory_database,
+                context_limit=args.memory_context_limit,
+                max_context_characters=(
+                    args.memory_context_characters
+                ),
+                max_entries=args.memory_max_entries,
+                max_value_characters=(
+                    args.memory_max_value_characters
+                ),
+            )
+        ) as store:
+            records = store.list_memories("all", 500)
+            if not records:
+                print("No saved memories.")
+            for record in records:
+                print(
+                    f"[{record.kind}] {record.name} "
+                    f"({record.value_type}) = {record.value}"
+                )
+        return 0
+
     try:
         import sounddevice as sd
 
