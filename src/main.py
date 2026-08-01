@@ -100,8 +100,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--end-silence",
         type=float,
-        default=0.8,
-        help="Silence duration that ends a command.",
+        default=0.4,
+        help="Silence duration that ends a command. Default: 0.4.",
     )
     parser.add_argument(
         "--max-command-seconds",
@@ -139,17 +139,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--stt-compute-type",
-        default="auto",
+        default="float16",
         help=(
-            "CTranslate2 compute type. Default: auto "
-            "(float16 on CUDA, int8 on CPU)."
+            "CTranslate2 compute type. Default: float16 on CUDA; "
+            "automatic CPU fallback uses int8."
         ),
     )
     parser.add_argument(
         "--stt-beam-size",
         type=int,
-        default=5,
-        help="Whisper beam size. Default: 5.",
+        default=1,
+        help="Whisper beam size. Default: 1 for low latency.",
     )
     parser.add_argument(
         "--stt-model-dir",
@@ -158,10 +158,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Model download/cache directory.",
     )
     parser.add_argument(
+        "--stt-best-of",
+        type=int,
+        default=1,
+        help="Whisper best-of candidates. Default: 1 for low latency.",
+    )
+    parser.add_argument(
+        "--stt-workers",
+        type=int,
+        default=2,
+        help="CTranslate2 worker count. Default: 2.",
+    )
+    parser.add_argument(
+        "--disable-stt-warmup",
+        action="store_true",
+        help="Skip the startup inference used to warm CUDA kernels.",
+    )
+    parser.add_argument(
         "--stt-cpu-threads",
         type=int,
-        default=8,
-        help="CPU threads used by CTranslate2. Default: 8.",
+        default=16,
+        help="CPU threads used by CTranslate2 fallback. Default: 16.",
     )
     parser.add_argument(
         "--llm-model",
@@ -257,6 +274,30 @@ def build_parser() -> argparse.ArgumentParser:
             "Default: 1200."
         ),
     )
+    parser.add_argument(
+        "--tts-first-chunk-characters",
+        type=int,
+        default=80,
+        help="Maximum size of the first TTS chunk. Default: 80.",
+    )
+    parser.add_argument(
+        "--tts-chunk-characters",
+        type=int,
+        default=180,
+        help="Maximum size of later TTS chunks. Default: 180.",
+    )
+    parser.add_argument(
+        "--tts-parallel-requests",
+        type=int,
+        default=3,
+        help="Parallel Edge TTS synthesis requests. Default: 3.",
+    )
+    parser.add_argument(
+        "--tts-mixer-buffer",
+        type=int,
+        default=256,
+        help="pygame mixer buffer size. Default: 256.",
+    )
     return parser
 
 
@@ -280,6 +321,13 @@ def speak_safely(
 ) -> bool:
     try:
         synthesizer.speak(text)
+        timing = synthesizer.last_timing
+        print(
+            f"TTS LATENCY: first_audio="
+            f"{timing.first_audio_seconds:.2f}s | "
+            f"chunks={timing.chunks} | "
+            f"total={timing.total_seconds:.2f}s"
+        )
         return True
     except RuntimeError as exc:
         print(f"TTS warning: {exc}", file=sys.stderr)
@@ -339,10 +387,26 @@ def run(args: argparse.Namespace) -> int:
                 device=args.stt_device,
                 compute_type=args.stt_compute_type,
                 beam_size=args.stt_beam_size,
+                best_of=args.stt_best_of,
                 download_root=args.stt_model_dir,
                 cpu_threads=args.stt_cpu_threads,
+                num_workers=args.stt_workers,
+                warmup_seconds=(
+                    0.0 if args.disable_stt_warmup else 1.0
+                ),
+                without_timestamps=True,
             )
         )
+
+        if args.disable_stt_warmup:
+            stt_warmup_seconds = 0.0
+        else:
+            print("Warming Faster-Whisper/CUDA...")
+            stt_warmup_seconds = recognizer.warmup()
+            print(
+                f"STT warm-up completed in "
+                f"{stt_warmup_seconds:.2f}s."
+            )
 
         print(f"Connecting GPT model '{args.llm_model}'...")
         agent = JarvisAgent(
@@ -366,6 +430,10 @@ def run(args: argparse.Namespace) -> int:
                 volume=args.tts_volume,
                 pitch_hz=args.tts_pitch,
                 max_characters=args.tts_max_characters,
+                first_chunk_characters=args.tts_first_chunk_characters,
+                chunk_characters=args.tts_chunk_characters,
+                parallel_requests=args.tts_parallel_requests,
+                mixer_buffer=args.tts_mixer_buffer,
             )
         )
         tts_enabled = not args.disable_tts
@@ -384,6 +452,12 @@ def run(args: argparse.Namespace) -> int:
             f"{recognizer.compute_type}"
         )
         print(f"STT language   : {language_text}")
+        print(f"STT beam       : {args.stt_beam_size}")
+        print(f"STT best-of    : {args.stt_best_of}")
+        print(
+            f"STT warm-up    : "
+            f"{'disabled' if args.disable_stt_warmup else 'enabled'}"
+        )
         print(f"LLM model      : {args.llm_model}")
         print(f"LLM reasoning  : {args.llm_reasoning}")
         tools_text = (
@@ -400,6 +474,11 @@ def run(args: argparse.Namespace) -> int:
         print(f"TTS rate       : {args.tts_rate:+d}%")
         print(f"TTS volume     : {args.tts_volume}")
         print(f"TTS pitch      : {args.tts_pitch:+d} Hz")
+        print(
+            f"TTS chunking   : first={args.tts_first_chunk_characters}, "
+            f"later={args.tts_chunk_characters}, "
+            f"parallel={args.tts_parallel_requests}"
+        )
         print(
             f"TTS output     : "
             f"{'enabled' if tts_enabled else 'disabled'}"

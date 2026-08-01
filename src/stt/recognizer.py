@@ -18,11 +18,15 @@ class SpeechRecognizerConfig:
     model_size: str = "turbo"
     language: str | None = "ko"
     device: str = "auto"
-    compute_type: str = "auto"
-    beam_size: int = 5
+    compute_type: str = "float16"
+    beam_size: int = 1
+    best_of: int = 1
     sample_rate: int = 16_000
     download_root: Path = Path("models/faster-whisper")
-    cpu_threads: int = 8
+    cpu_threads: int = 16
+    num_workers: int = 2
+    warmup_seconds: float = 1.0
+    without_timestamps: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,8 +107,14 @@ class SpeechRecognizer:
             raise ValueError("STT device must be auto, cuda, or cpu.")
         if config.beam_size <= 0:
             raise ValueError("beam_size must be positive.")
+        if config.best_of <= 0:
+            raise ValueError("best_of must be positive.")
         if config.cpu_threads <= 0:
             raise ValueError("cpu_threads must be positive.")
+        if config.num_workers <= 0:
+            raise ValueError("num_workers must be positive.")
+        if config.warmup_seconds < 0:
+            raise ValueError("warmup_seconds must not be negative.")
 
         _register_torch_dll_directory()
 
@@ -141,9 +151,14 @@ class SpeechRecognizer:
 
     @staticmethod
     def _resolve_compute_type(requested: str, device: str) -> str:
-        if requested != "auto":
-            return requested
-        return "float16" if device == "cuda" else "int8"
+        if requested == "auto":
+            return "float16" if device == "cuda" else "int8"
+        if (
+            device == "cpu"
+            and requested in {"float16", "int8_float16"}
+        ):
+            return "int8"
+        return requested
 
     def _create_model(self) -> Any:
         self.config.download_root.mkdir(parents=True, exist_ok=True)
@@ -153,6 +168,7 @@ class SpeechRecognizer:
             compute_type=self.compute_type,
             download_root=str(self.config.download_root),
             cpu_threads=self.config.cpu_threads,
+            num_workers=self.config.num_workers,
         )
 
     def _switch_to_cpu(self, error: BaseException) -> None:
@@ -186,6 +202,34 @@ class SpeechRecognizer:
             self._switch_to_cpu(exc)
             return self._create_model()
 
+    def warmup(self) -> float:
+        """Run one silent inference so CUDA kernels and model caches are hot."""
+
+        if self.config.warmup_seconds <= 0:
+            return 0.0
+
+        sample_count = max(
+            1,
+            int(self.config.sample_rate * self.config.warmup_seconds),
+        )
+        silent_audio = np.zeros(sample_count, dtype=np.float32)
+
+        started_at = perf_counter()
+        raw_segments, _ = self._model.transcribe(
+            silent_audio,
+            language=self.config.language,
+            task="transcribe",
+            beam_size=1,
+            best_of=1,
+            temperature=0.0,
+            condition_on_previous_text=False,
+            vad_filter=False,
+            word_timestamps=False,
+            without_timestamps=True,
+        )
+        tuple(raw_segments)
+        return perf_counter() - started_at
+
     @property
     def model_name(self) -> str:
         return self.config.model_size
@@ -204,10 +248,12 @@ class SpeechRecognizer:
             language=self.config.language,
             task="transcribe",
             beam_size=self.config.beam_size,
+            best_of=self.config.best_of,
             temperature=0.0,
             condition_on_previous_text=False,
             vad_filter=False,
             word_timestamps=False,
+            without_timestamps=self.config.without_timestamps,
         )
 
         # faster-whisper returns a generator. Iteration performs the

@@ -1,38 +1,50 @@
-# LLM Agent — Step 7.1: Edge Neural TTS
+# LLM Agent — Step 7.2: Low-Latency Voice Pipeline
 
-기존 Windows SAPI5 음성을 제거하고 Microsoft Edge의 자연스러운 신경망
-TTS로 교체했습니다.
+음성 인식과 음성 출력의 체감 지연을 줄인 성능 우선 버전입니다.
 
-## 기본 음성
+## 핵심 변경
 
-```text
-ko-KR-InJoonNeural
-```
-
-한국어 남성 음성으로, 기존 `Microsoft Heami Desktop`보다 자연스러운
-음성 출력을 목표로 합니다.
-
-## 전체 흐름
+### 명령이 끝났다고 판단하는 시간
 
 ```text
-"Hey Jarvis"
-→ 음성 명령 인식
-→ GPT 추론 및 도구 호출
-→ 필요하면 화면 캡처·분석
-→ GPT 최종 답변
-→ Edge Neural TTS 생성 및 재생
-→ 다시 웨이크워드 대기
+기존: 0.8초 침묵
+변경: 0.4초 침묵
 ```
 
-## 중요한 차이
+말을 끝낸 뒤 STT가 시작되기까지 기다리는 시간을 약 0.4초 줄였습니다.
 
-Edge TTS는 로컬 SAPI와 달리 인터넷 연결이 필요합니다.
+### Faster-Whisper
 
-- 별도의 Azure API 키: 필요 없음
-- OpenAI TTS 비용: 발생하지 않음
-- 인터넷 연결: 필요
-- 음질: Windows 기본 SAPI보다 자연스러운 편
-- 재생: Windows에서는 `edge-playback`의 기본 재생 기능 사용
+```text
+모델: turbo
+장치: CUDA 우선 자동 선택
+연산: float16
+beam size: 1
+best_of: 1
+CPU fallback threads: 16
+workers: 2
+startup warm-up: 활성화
+timestamps: 비활성화
+```
+
+첫 명령에서 CUDA 초기화 때문에 느려지는 현상을 줄이기 위해 프로그램 시작
+시 무음 추론을 한 번 수행합니다.
+
+### Edge Neural TTS
+
+기존 구현은 답변마다 새 Python 프로세스를 실행해 `edge-playback`을
+호출했습니다. 이번 버전은:
+
+```text
+Edge TTS Python API를 프로세스 안에서 직접 사용
+pygame 오디오 믹서를 시작할 때 한 번만 초기화
+첫 문장을 짧은 조각으로 분리
+뒤쪽 문장들은 최대 3개 요청으로 병렬 합성
+첫 조각이 준비되는 즉시 재생
+```
+
+따라서 긴 답변 전체의 음성이 완성될 때까지 기다리지 않고, 먼저 생성된
+첫 부분부터 읽기 시작합니다.
 
 ## 설치
 
@@ -46,95 +58,66 @@ python -m pip install -r requirements.txt
 python -m src.main
 ```
 
-## 한국어 보이스 목록 확인
-
-```powershell
-python -m src.main --list-tts-voices
-```
-
-사용 가능한 보이스 목록은 온라인 서비스에서 불러오기 때문에 인터넷 연결이
-필요합니다.
-
-대표적인 한국어 음성 예시:
+## 기본 저지연 설정
 
 ```text
-ko-KR-InJoonNeural
-ko-KR-SunHiNeural
-ko-KR-HyunsuNeural
-ko-KR-BongJinNeural
-ko-KR-GookMinNeural
-ko-KR-JiMinNeural
-ko-KR-SeoHyeonNeural
-ko-KR-SoonBokNeural
-ko-KR-YuJinNeural
+end silence       : 0.4초
+STT beam          : 1
+STT best-of       : 1
+STT compute       : float16
+STT warm-up       : 활성화
+첫 TTS 조각       : 최대 80자
+이후 TTS 조각     : 최대 180자
+TTS 병렬 요청     : 3
+오디오 버퍼       : 256
 ```
 
-실제 사용 가능 여부는 `--list-tts-voices` 출력이 기준입니다.
-
-## 보이스 변경
-
-여성 음성:
-
-```powershell
-python -m src.main --tts-voice "ko-KR-SunHiNeural"
-```
-
-다른 남성 음성:
-
-```powershell
-python -m src.main --tts-voice "ko-KR-HyunsuNeural"
-```
-
-## 속도·음량·피치
-
-조금 빠르고 낮은 목소리:
-
-```powershell
-python -m src.main --tts-rate 8 --tts-pitch -8
-```
-
-조금 느리게:
-
-```powershell
-python -m src.main --tts-rate -8
-```
-
-음량 낮추기:
-
-```powershell
-python -m src.main --tts-volume 80
-```
-
-설정 범위:
-
-```text
-rate   : -100 ~ 100%
-volume : 0 ~ 100
-pitch  : -100 ~ 100 Hz
-```
-
-## 실행 중 음성 출력 전환
-
-```text
-음성 출력 꺼줘
-음성 출력 켜줘
-TTS 꺼줘
-TTS 켜줘
-```
-
-## 추천 기본 조합
-
-자비스처럼 조금 차분한 남성 음성:
+## 더 공격적으로 줄이기
 
 ```powershell
 python -m src.main `
-  --tts-voice "ko-KR-InJoonNeural" `
-  --tts-rate 4 `
-  --tts-pitch -6
+  --end-silence 0.32 `
+  --tts-first-chunk-characters 55 `
+  --tts-chunk-characters 140 `
+  --tts-parallel-requests 4
 ```
+
+`--end-silence`를 너무 낮추면 문장 중간의 짧은 쉼을 명령 종료로 잘못 판단할
+수 있습니다. 기본값 0.4초부터 테스트하는 것을 권장합니다.
+
+## 정확도를 조금 올리고 싶을 때
+
+속도 대신 STT 정확도를 조금 더 우선하려면:
+
+```powershell
+python -m src.main --stt-beam-size 3 --stt-best-of 3
+```
+
+## 성능 확인
+
+STT 출력:
+
+```text
+TRANSCRIPT [ko 100.0% | 0.21s]: 계산기 켜줘
+```
+
+TTS 출력:
+
+```text
+TTS LATENCY: first_audio=0.63s | chunks=2 | total=3.14s
+```
+
+`first_audio`가 GPT 답변 생성 후 실제 음성이 시작되기까지의 핵심 수치입니다.
+
+## 참고
+
+Edge TTS의 음성 생성은 온라인 서비스이므로 RTX 5090 사용률을 높이는 것만으로
+네트워크 왕복 지연까지 줄일 수는 없습니다. 대신 이번 버전에서는 프로세스
+실행 비용을 없애고, 짧은 조각과 병렬 요청으로 첫 음성이 더 빨리 나오도록
+구조를 바꿨습니다.
 
 ## 커밋 메시지
 
 ```bash
-git commit -m "Replace Windows SAPI with Edge neural TTS"
+git commit -m "Optimize STT and TTS for low-latency voice responses"
 ```
