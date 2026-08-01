@@ -215,7 +215,8 @@ def build_runtime(
         ),
     )
     tool_registry = build_default_tool_registry(
-        browser_config=browser_config
+        browser_config=browser_config,
+        browser_control_mode=args.browser_control_mode,
     )
     fast_router = LocalCommandRouter(
         tool_registry,
@@ -430,6 +431,9 @@ def build_runtime(
         f"Browser        : "
         f"{browser_config.display_name} "
         f"({browser_config.browser})"
+    )
+    print(
+        f"Browser mode   : {args.browser_control_mode}"
     )
     print(
         f"Browser profile: "

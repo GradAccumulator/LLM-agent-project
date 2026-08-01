@@ -374,6 +374,11 @@ def build_parser(
         negative_help="Disable Playwright browser tools.",
     )
     parser.add_argument(
+        "--browser-control-mode",
+        choices=("system", "automation"),
+        default="system",
+    )
+    parser.add_argument(
         "--browser",
         dest="browser_selection",
         choices=(

@@ -201,6 +201,9 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
     },
     "browser": {
         "enabled": _SettingSpec("browser_automation", bool),
+        "control_mode": _SettingSpec(
+            "browser_control_mode", str
+        ),
         "headless": _SettingSpec("browser_headless", bool),
         "browser": _SettingSpec(
             "browser_selection", str
@@ -474,6 +477,7 @@ def _validate_values(values: dict[str, Any]) -> None:
         "vision_detail": {
             "low", "high", "original", "auto"
         },
+        "browser_control_mode": {"system", "automation"},
         "browser_selection": {
             "msedge",
             "msedge-beta",
@@ -494,9 +498,14 @@ def _validate_values(values: dict[str, Any]) -> None:
                 + ", ".join(sorted(allowed))
             )
 
+    browser_mode = values.get("browser_control_mode")
     browser_selection = values.get(
         "browser_selection"
     )
+    if browser_mode == "system" and browser_selection == "chromium":
+        raise ConfigError(
+            "browser=chromium requires control_mode=automation."
+        )
     browser_executable = values.get(
         "browser_executable_path"
     )

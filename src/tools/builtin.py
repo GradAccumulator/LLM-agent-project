@@ -9,7 +9,11 @@ import subprocess
 import sys
 from urllib.parse import quote_plus
 
-from src.browser import BrowserAutomationConfig, BrowserController
+from src.browser import (
+    BrowserAutomationConfig,
+    BrowserController,
+    SystemBrowserController,
+)
 
 from .browser_tools import register_browser_tools
 from .registry import ToolRegistry, ToolSpec
@@ -329,13 +333,28 @@ def inspect_screen(display: str) -> dict:
 
 def build_default_tool_registry(
     browser_config: BrowserAutomationConfig | None = None,
+    *,
+    browser_control_mode: str = "system",
 ) -> ToolRegistry:
     registry = ToolRegistry()
     register_planning_tools(registry)
 
-    browser_controller = BrowserController(
+    effective_browser_config = (
         browser_config or BrowserAutomationConfig()
     )
+    browser_controller = BrowserController(
+        effective_browser_config
+    )
+    system_browser_controller = SystemBrowserController(
+        effective_browser_config
+    )
+    if browser_control_mode not in {"system", "automation"}:
+        raise ValueError("Invalid browser_control_mode.")
+
+    def open_selected_page(url: str) -> dict:
+        if browser_control_mode == "system":
+            return system_browser_controller.open_page(url)
+        return browser_controller.open_page(url)
 
     def open_application_selected(
         application: str,
@@ -343,14 +362,14 @@ def build_default_tool_registry(
         if application != "browser":
             return open_application(application)
 
-        result = browser_controller.open_page(
+        result = open_selected_page(
             "https://www.google.com/"
         )
         return {
             "application": "browser",
             **result,
             "message": (
-                f"{browser_controller.config.display_name} "
+                f"{effective_browser_config.display_name} "
                 "launch request was sent."
             ),
         }
@@ -361,13 +380,13 @@ def build_default_tool_registry(
             raise ValueError(
                 f"Unsupported website: {site}"
             )
-        result = browser_controller.open_page(url)
+        result = open_selected_page(url)
         return {
             "site": site,
             **result,
             "message": (
                 f"Website opened in "
-                f"{browser_controller.config.display_name}."
+                f"{effective_browser_config.display_name}."
             ),
         }
 
@@ -392,14 +411,14 @@ def build_default_tool_registry(
         url = _SEARCH_URLS[engine].format(
             query=quote_plus(query)
         )
-        result = browser_controller.open_page(url)
+        result = open_selected_page(url)
         return {
             "engine": engine,
             "query": query,
             **result,
             "message": (
                 f"Search opened in "
-                f"{browser_controller.config.display_name}."
+                f"{effective_browser_config.display_name}."
             ),
         }
 
@@ -705,9 +724,33 @@ def build_default_tool_registry(
         )
     )
 
-    register_browser_tools(
-        registry,
-        browser_controller,
+    registry.register(
+        ToolSpec(
+            name="list_jarvis_browser_windows",
+            description="Jarvis가 연 일반 브라우저 창 목록을 조회한다.",
+            parameters=_empty_parameters(),
+            handler=system_browser_controller.list_owned_windows,
+        )
     )
+    registry.register(
+        ToolSpec(
+            name="close_jarvis_browser_window",
+            description="Jarvis가 직접 연 일반 브라우저 창만 닫는다.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "window_id": {
+                        "type": ["integer", "null"],
+                    }
+                },
+                "required": ["window_id"],
+                "additionalProperties": False,
+            },
+            handler=system_browser_controller.close_owned_window,
+        )
+    )
+    register_browser_tools(registry, browser_controller)
+    registry.register_closer(browser_controller.close)
+    registry.register_closer(system_browser_controller.close)
 
     return registry

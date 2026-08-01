@@ -145,6 +145,14 @@ class LocalCommandRouter:
         "브라우저뒤로가줘",
     }
     _BROWSER_CLOSE_COMMANDS = {
+        "브라우저닫아줘",
+        "브라우저창닫아줘",
+        "엣지닫아줘",
+        "엣지창닫아줘",
+        "크롬닫아줘",
+        "크롬창닫아줘",
+    }
+    _AUTOMATION_BROWSER_CLOSE_COMMANDS = {
         "자동화브라우저닫아줘",
         "플레이라이트브라우저닫아줘",
     }
@@ -475,6 +483,18 @@ class LocalCommandRouter:
                 ),
             )
         if normalized in self._BROWSER_CLOSE_COMMANDS:
+            return _MatchedCommand(
+                "normal_browser_close",
+                lambda: self._execute_one(
+                    "normal_browser_close",
+                    "close_jarvis_browser_window",
+                    {"window_id": None},
+                    lambda data: (
+                        f"{data.get('browser_name', '브라우저')} 창을 닫았습니다."
+                    ),
+                ),
+            )
+        if normalized in self._AUTOMATION_BROWSER_CLOSE_COMMANDS:
             return _MatchedCommand(
                 "browser_close",
                 lambda: self._execute_one(

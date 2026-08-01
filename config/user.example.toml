@@ -36,6 +36,7 @@ max_turns = 8
 
 
 [browser]
+control_mode = "system"
 # 설치된 Microsoft Edge
 browser = "msedge"
 executable_path = ""

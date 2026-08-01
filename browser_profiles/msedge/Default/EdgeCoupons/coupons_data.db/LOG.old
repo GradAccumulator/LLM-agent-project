@@ -1,0 +1,5 @@
+2026/08/01-11:32:28.215 52d0 Creating DB C:\Users\LEEJUHYOUNG\Documents\LLM agent project\browser_profiles\msedge\Default\EdgeCoupons/coupons_data.db since it was missing.
+2026/08/01-11:32:28.220 52d0 Reusing MANIFEST C:\Users\LEEJUHYOUNG\Documents\LLM agent project\browser_profiles\msedge\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/08/01-11:32:28.327 a868 Level-0 table #5: started
+2026/08/01-11:32:28.329 a868 Level-0 table #5: 683172 bytes OK
+2026/08/01-11:32:28.330 a868 Delete type=0 #3

@@ -69,6 +69,9 @@ max_turns = 8
 enabled = true
 headless = false
 
+# system = 일반 사용자 프로필, automation = Playwright
+control_mode = "system"
+
 # msedge, chrome, chromium, custom
 # 기본값은 PC에 설치된 Microsoft Edge입니다.
 browser = "msedge"
