@@ -1,5 +1,30 @@
 # LLM Agent — Step 16.2: Normal Edge Window Control
 
+## Step 16.2.1 — Barge-in 상태 전환 핫픽스
+
+다음 오류를 수정했습니다.
+
+```text
+Invalid transition CAPTURING -> SLEEPING
+```
+
+대화 최대 턴에 도달한 순간 사용자가 TTS를 끊으면 캡처된 음성을 처리하지
+않고 수면 상태로 전환하던 조건문이 원인이었습니다.
+
+```text
+SPEAKING
+→ 사용자 끼어들기
+→ CAPTURING
+→ 기존 답변 종료
+→ 최대 턴이면 새 대화 세션으로 자동 롤오버
+→ CAPTURING → TRANSCRIBING
+→ 끼어든 명령 처리
+```
+
+바지인 결과가 상태 전환보다 조금 늦게 도착하는 경쟁 조건도 방어적으로
+수집합니다. `CAPTURING → SLEEPING`을 무작정 허용하지 않아 캡처된 음성이
+STT 전에 버려지지 않습니다.
+
 Google 로그인 오류는 Windows 권한 문제가 아니라 Google이 Playwright
 브라우저를 자동화 환경으로 판단해서 발생한 문제입니다.
 

@@ -232,20 +232,117 @@ class VoiceAssistantRuntime:
             'timeout_seconds': timeout,
         })
 
-    def _after_turn(self, *, outcome: str) -> None:
-        pending_barge_in = self._pending_barge_in_capture
+    def _take_pending_barge_in_capture(self):
+        pending = self._pending_barge_in_capture
         self._pending_barge_in_capture = None
+        if pending is not None:
+            return pending
+
+        # The trigger callback changes state to CAPTURING immediately, while
+        # the monitor may need a little longer to finish the user's utterance.
+        if (
+            self.state.current is not AgentState.CAPTURING
+            or not self.barge_in.triggered
+        ):
+            return None
+
+        wait_timeout = (
+            self.barge_in.config.max_utterance_seconds
+            + self.barge_in.config.end_silence_seconds
+            + 2.0
+        )
+        result = self.barge_in.wait_for_result(
+            timeout=wait_timeout
+        )
+        if result is None:
+            self.barge_in.stop(timeout=1.0)
+            raise RuntimeError(
+                "Barge-in was triggered, but the captured "
+                "utterance was not ready before turn finalization."
+            )
+
+        self.metrics.log(
+            "barge_in_captured",
+            data={
+                "command_id": (
+                    self._active_command.command_id
+                    if self._active_command
+                    else None
+                ),
+                "conversation_id": (
+                    self.conversation.session_id
+                ),
+                "trigger_latency_seconds": (
+                    result.trigger_latency_seconds
+                ),
+                "duration_seconds": (
+                    result.capture.duration_seconds
+                ),
+                "peak_probability": (
+                    result.capture.peak_probability
+                ),
+                "end_reason": (
+                    result.capture.end_reason
+                ),
+                "late_collection": True,
+            },
+        )
+        return result.capture
+
+    def _roll_over_conversation_for_barge_in(
+        self,
+        *,
+        previous_conversation_id: str | None,
+    ) -> None:
+        self._end_conversation(
+            "barge_in_at_turn_limit"
+        )
+        self._start_conversation()
+        self.metrics.log(
+            "conversation_rolled_over",
+            data={
+                "previous_conversation_id": (
+                    previous_conversation_id
+                ),
+                "conversation_id": (
+                    self.conversation.session_id
+                ),
+                "reason": "barge_in_at_turn_limit",
+            },
+        )
+
+    def _after_turn(self, *, outcome: str) -> None:
+        pending_barge_in = (
+            self._take_pending_barge_in_capture()
+        )
 
         self._finish_command(outcome)
         completed_turn = self.conversation.complete_turn()
         snapshot = self.conversation.snapshot()
-        self.metrics.log('conversation_turn_completed', data={
-            'conversation_id': self.conversation.session_id,
-            'turn_index': completed_turn,
-            'remaining_turns': snapshot.remaining_turns,
-        })
+        self.metrics.log(
+            "conversation_turn_completed",
+            data={
+                "conversation_id": (
+                    self.conversation.session_id
+                ),
+                "turn_index": completed_turn,
+                "remaining_turns": (
+                    snapshot.remaining_turns
+                ),
+            },
+        )
 
-        if pending_barge_in is not None and snapshot.remaining_turns > 0:
+        # A captured interruption always wins over normal idle or turn-limit
+        # handling. Never discard it because the previous session became full.
+        if pending_barge_in is not None:
+            rolled_over = snapshot.remaining_turns <= 0
+            if rolled_over:
+                self._roll_over_conversation_for_barge_in(
+                    previous_conversation_id=(
+                        snapshot.session_id
+                    )
+                )
+
             self._start_command(
                 wake_score=None,
                 wakeword_required=False,
@@ -254,29 +351,44 @@ class VoiceAssistantRuntime:
                 self._active_command.capture_audio_seconds = (
                     pending_barge_in.duration_seconds
                 )
+
             self.metrics.log(
-                'barge_in_command_started',
+                "barge_in_command_started",
                 data={
-                    'conversation_id': self.conversation.session_id,
-                    'turn_index': self.conversation.next_turn_index,
-                    'duration_seconds': pending_barge_in.duration_seconds,
-                    'peak_probability': pending_barge_in.peak_probability,
+                    "conversation_id": (
+                        self.conversation.session_id
+                    ),
+                    "turn_index": (
+                        self.conversation.next_turn_index
+                    ),
+                    "duration_seconds": (
+                        pending_barge_in.duration_seconds
+                    ),
+                    "peak_probability": (
+                        pending_barge_in.peak_probability
+                    ),
+                    "rolled_over": rolled_over,
                 },
             )
-            print('BARGE-IN: processing the interruption now.')
+            print(
+                "BARGE-IN: processing the interruption now."
+            )
+
+            # State remains CAPTURING from the trigger callback.
+            # _process_capture performs CAPTURING -> TRANSCRIBING.
             self._process_capture(pending_barge_in)
             return
 
         if self.conversation.can_accept_followup:
             self._continue_conversation(
-                reason='awaiting follow-up command'
+                reason="awaiting follow-up command"
             )
             return
 
         reason = (
-            'continuous conversation disabled'
+            "continuous conversation disabled"
             if not self.conversation.config.enabled
-            else 'maximum turns reached'
+            else "maximum turns reached"
         )
         self._return_to_sleep(
             reason=reason,
