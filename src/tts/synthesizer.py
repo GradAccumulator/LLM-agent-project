@@ -7,7 +7,8 @@ import importlib
 from pathlib import Path
 import re
 import tempfile
-from threading import Event
+from queue import Queue
+from threading import Event, Lock, Thread
 from time import perf_counter, sleep
 from typing import Any
 
@@ -552,6 +553,15 @@ class SpeechSynthesizer:
         )
         return not interrupted
 
+    def start_stream(self) -> StreamingSpeechSession:
+        """Create a sentence queue that speaks while text is still arriving."""
+
+        if self._closed:
+            raise RuntimeError(
+                "Speech synthesizer is already closed."
+            )
+        return StreamingSpeechSession(self)
+
     def close(self) -> None:
         if getattr(self, '_closed', True):
             return
@@ -584,3 +594,123 @@ class SpeechSynthesizer:
             self.close()
         except Exception:
             pass
+
+
+
+class StreamingSpeechSession:
+    """Sequential playback queue fed by incremental LLM text."""
+
+    _SENTINEL = object()
+
+    def __init__(
+        self,
+        synthesizer: SpeechSynthesizer,
+    ) -> None:
+        self._synthesizer = synthesizer
+        self._queue: Queue[object] = Queue()
+        self._lock = Lock()
+        self._started_at = perf_counter()
+        self._finished = False
+        self._cancelled = False
+        self._error: BaseException | None = None
+        self._requested_chunks = 0
+        self._played_chunks = 0
+        self._first_audio_seconds = 0.0
+        self._interrupted = False
+        self._thread = Thread(
+            target=self._run,
+            name="jarvis-streaming-tts",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def enqueue(self, text: str) -> bool:
+        cleaned = clean_for_speech(
+            text,
+            max_characters=self._synthesizer.config.max_characters,
+        )
+        if not cleaned:
+            return False
+
+        with self._lock:
+            if self._finished or self._cancelled:
+                return False
+            self._requested_chunks += 1
+            self._queue.put(cleaned)
+        return True
+
+    def finish(self) -> SpeechTiming:
+        with self._lock:
+            if not self._finished:
+                self._finished = True
+                self._queue.put(self._SENTINEL)
+
+        timeout = (
+            self._synthesizer.config.playback_timeout_seconds
+            * max(1, self._requested_chunks)
+        )
+        self._thread.join(timeout=timeout)
+        if self._thread.is_alive():
+            self.cancel()
+            raise RuntimeError(
+                "Streaming TTS did not finish in time."
+            )
+        if self._error is not None:
+            raise RuntimeError(
+                f"Streaming TTS failed: {self._error}"
+            ) from self._error
+        return self._build_timing()
+
+    def cancel(self) -> SpeechTiming:
+        with self._lock:
+            if not self._cancelled:
+                self._cancelled = True
+                self._interrupted = True
+                self._synthesizer.stop()
+                self._queue.put(self._SENTINEL)
+
+        self._thread.join(timeout=2.0)
+        return self._build_timing()
+
+    def _build_timing(self) -> SpeechTiming:
+        timing = SpeechTiming(
+            chunks=self._played_chunks,
+            requested_chunks=self._requested_chunks,
+            first_audio_seconds=self._first_audio_seconds,
+            total_seconds=perf_counter() - self._started_at,
+            interrupted=self._interrupted,
+        )
+        self._synthesizer._last_timing = timing
+        return timing
+
+    def _run(self) -> None:
+        try:
+            while True:
+                item = self._queue.get()
+                if item is self._SENTINEL:
+                    break
+                if self._cancelled:
+                    break
+                if not isinstance(item, str):
+                    continue
+
+                chunk_started = perf_counter()
+                spoken = self._synthesizer.speak(item)
+                timing = self._synthesizer.last_timing
+
+                if (
+                    self._first_audio_seconds == 0.0
+                    and timing.first_audio_seconds > 0.0
+                ):
+                    self._first_audio_seconds = (
+                        chunk_started - self._started_at
+                        + timing.first_audio_seconds
+                    )
+
+                self._played_chunks += timing.chunks
+                if timing.interrupted or not spoken:
+                    self._interrupted = True
+                    break
+        except BaseException as exc:
+            self._error = exc
+            self._interrupted = True

@@ -4,6 +4,8 @@ from .agent import (
     JarvisAgent,
     ToolLifecycleCallback,
     ToolLifecycleEvent,
+    TextDeltaCallback,
+    TextStreamCancelCallback,
 )
 
 __all__ = [
@@ -12,4 +14,6 @@ __all__ = [
     "JarvisAgent",
     "ToolLifecycleCallback",
     "ToolLifecycleEvent",
+    "TextDeltaCallback",
+    "TextStreamCancelCallback",
 ]

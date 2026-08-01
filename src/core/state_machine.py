@@ -74,6 +74,8 @@ def _build_allowed_transitions() -> dict[AgentState, frozenset[AgentState]]:
         },
         AgentState.SPEAKING: {
             AgentState.CAPTURING,
+            AgentState.THINKING,
+            AgentState.EXECUTING_TOOL,
             AgentState.AWAITING_SPEECH,
             AgentState.SLEEPING,
         },

@@ -48,6 +48,12 @@ chunk_characters = 180
 parallel_requests = 3
 mixer_buffer = 256
 
+
+[streaming]
+enabled = true
+minimum_sentence_characters = 24
+maximum_chunk_characters = 160
+
 [conversation]
 enabled = true
 followup_timeout_seconds = 12.0

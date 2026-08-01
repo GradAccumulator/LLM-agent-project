@@ -19,7 +19,15 @@ from src.llm import JarvisAgent, ToolLifecycleEvent
 from src.metrics import JsonlMetricsLogger
 from src.speech import CaptureResult, SpeechCapture, save_wave_file
 from src.stt import SpeechRecognizer, TranscriptionResult
-from src.tts import SpeechSynthesizer
+from src.streaming import (
+    IncrementalSentenceChunker,
+    SentenceChunkerConfig,
+)
+from src.tts import (
+    SpeechSynthesizer,
+    SpeechTiming,
+    StreamingSpeechSession,
+)
 from src.wakeword import DetectionResult, WakeWordDetector
 
 
@@ -44,6 +52,9 @@ class RuntimeConfig:
     save_directory: Path = Path('recordings')
     max_saved_audio_files: int = 5
     tts_enabled: bool = True
+    streaming_enabled: bool = True
+    streaming_minimum_characters: int = 24
+    streaming_maximum_characters: int = 160
     show_state_transitions: bool = True
     recovery_delay_seconds: float = 0.25
 
@@ -59,6 +70,7 @@ class _CommandTrace:
     capture_audio_seconds: float | None = None
     stt_seconds: float | None = None
     llm_seconds: float | None = None
+    llm_first_text_seconds: float | None = None
     tool_seconds: float = 0.0
     tool_count: int = 0
     tts_first_audio_seconds: float | None = None
@@ -191,6 +203,9 @@ class VoiceAssistantRuntime:
             'capture_audio_seconds': trace.capture_audio_seconds,
             'stt_seconds': trace.stt_seconds,
             'llm_seconds': trace.llm_seconds,
+            'llm_first_text_seconds': (
+                trace.llm_first_text_seconds
+            ),
             'tool_seconds': round(trace.tool_seconds, 6),
             'tool_count': trace.tool_count,
             'tts_first_audio_seconds': trace.tts_first_audio_seconds,
@@ -584,39 +599,335 @@ class VoiceAssistantRuntime:
         self._local_reply(result.reply)
         return True
 
-    def _ask_agent(self, transcript_text: str) -> None:
-        self._transition(AgentState.THINKING, 'transcription ready')
-        print('THINKING...', flush=True)
-        reply = self.agent.ask(transcript_text, on_tool_event=self._on_tool_event)
+
+    def _log_agent_reply(self, reply) -> None:
         trace = self._active_command
         if trace is not None:
             trace.llm_seconds = reply.elapsed_seconds
+            trace.llm_first_text_seconds = (
+                reply.first_text_seconds
+            )
             trace.reply = reply.text
+
         for tool_call in reply.tool_calls:
-            status = 'success' if tool_call.success else 'failed'
-            print(f'TOOL {tool_call.name}({tool_call.arguments})')
-            print(f'TOOL RESULT: {status} ({tool_call.elapsed_seconds:.3f}s)')
+            status = (
+                "success"
+                if tool_call.success
+                else "failed"
+            )
+            print(
+                f"TOOL {tool_call.name}"
+                f"({tool_call.arguments})"
+            )
+            print(
+                f"TOOL RESULT: {status} "
+                f"({tool_call.elapsed_seconds:.3f}s)"
+            )
             if not tool_call.success:
                 print(tool_call.output)
-        usage_text = format_token_usage(reply.input_tokens, reply.output_tokens)
-        print(
-            f'JARVIS [{reply.model} | {reply.elapsed_seconds:.2f}s | '
-            f'{usage_text} | tools={len(reply.tool_calls)}]:'
+
+        usage_text = format_token_usage(
+            reply.input_tokens,
+            reply.output_tokens,
         )
+        first_text = (
+            "?"
+            if reply.first_text_seconds is None
+            else f"{reply.first_text_seconds:.2f}s"
+        )
+        print(
+            f"JARVIS META [{reply.model} | "
+            f"first_text={first_text} | "
+            f"total={reply.elapsed_seconds:.2f}s | "
+            f"{usage_text} | "
+            f"tools={len(reply.tool_calls)}]"
+        )
+
+        self.metrics.log(
+            "llm_completed",
+            data={
+                "command_id": (
+                    trace.command_id
+                    if trace
+                    else None
+                ),
+                "conversation_id": (
+                    self.conversation.session_id
+                ),
+                "model": reply.model,
+                "elapsed_seconds": (
+                    reply.elapsed_seconds
+                ),
+                "first_text_seconds": (
+                    reply.first_text_seconds
+                ),
+                "input_tokens": reply.input_tokens,
+                "output_tokens": (
+                    reply.output_tokens
+                ),
+                "total_tokens": reply.total_tokens,
+                "tool_count": len(reply.tool_calls),
+                "reply_characters": len(reply.text),
+                "streaming": (
+                    self.config.streaming_enabled
+                ),
+            },
+            private={"reply": reply.text},
+        )
+
+    def _settle_stream_barge_in(
+        self,
+        *,
+        monitor_started: bool,
+    ) -> None:
+        if not monitor_started:
+            return
+
+        if self.barge_in.triggered:
+            wait_timeout = (
+                self.barge_in.config.max_utterance_seconds
+                + self.barge_in.config.end_silence_seconds
+                + 2.0
+            )
+            result = self.barge_in.wait_for_result(
+                timeout=wait_timeout
+            )
+            if result is None:
+                self.barge_in.stop(timeout=1.0)
+                raise RuntimeError(
+                    "Barge-in capture did not finish in time."
+                )
+
+            self._pending_barge_in_capture = (
+                result.capture
+            )
+            self.metrics.log(
+                "barge_in_captured",
+                data={
+                    "command_id": (
+                        self._active_command.command_id
+                        if self._active_command
+                        else None
+                    ),
+                    "conversation_id": (
+                        self.conversation.session_id
+                    ),
+                    "trigger_latency_seconds": (
+                        result.trigger_latency_seconds
+                    ),
+                    "duration_seconds": (
+                        result.capture.duration_seconds
+                    ),
+                    "peak_probability": (
+                        result.capture.peak_probability
+                    ),
+                    "end_reason": (
+                        result.capture.end_reason
+                    ),
+                    "during_streaming": True,
+                },
+            )
+        else:
+            self.barge_in.stop(timeout=1.0)
+
+    def _record_stream_timing(
+        self,
+        timing: SpeechTiming,
+    ) -> None:
+        trace = self._active_command
+        if trace is not None:
+            trace.tts_first_audio_seconds = (
+                timing.first_audio_seconds
+            )
+            trace.tts_total_seconds = (
+                timing.total_seconds
+            )
+
+        self.metrics.log(
+            "streaming_tts_completed",
+            data={
+                "command_id": (
+                    trace.command_id
+                    if trace
+                    else None
+                ),
+                "conversation_id": (
+                    self.conversation.session_id
+                ),
+                "first_audio_seconds": (
+                    timing.first_audio_seconds
+                ),
+                "chunks": timing.chunks,
+                "requested_chunks": (
+                    timing.requested_chunks
+                ),
+                "total_seconds": timing.total_seconds,
+                "interrupted": timing.interrupted,
+            },
+        )
+        print(
+            "STREAM TTS: first_audio="
+            f"{timing.first_audio_seconds:.2f}s "
+            f"| chunks={timing.chunks}/"
+            f"{timing.requested_chunks} "
+            f"| total={timing.total_seconds:.2f}s "
+            f"| interrupted={timing.interrupted}"
+        )
+
+    def _ask_agent_buffered(
+        self,
+        transcript_text: str,
+    ) -> None:
+        self._transition(
+            AgentState.THINKING,
+            "transcription ready",
+        )
+        print("THINKING...", flush=True)
+        reply = self.agent.ask(
+            transcript_text,
+            on_tool_event=self._on_tool_event,
+        )
+        self._log_agent_reply(reply)
         print(reply.text)
-        self.metrics.log('llm_completed', data={
-            'command_id': trace.command_id if trace else None,
-            'conversation_id': self.conversation.session_id,
-            'model': reply.model,
-            'elapsed_seconds': reply.elapsed_seconds,
-            'input_tokens': reply.input_tokens,
-            'output_tokens': reply.output_tokens,
-            'total_tokens': reply.total_tokens,
-            'tool_count': len(reply.tool_calls),
-            'reply_characters': len(reply.text),
-        }, private={'reply': reply.text})
         if self.tts_enabled:
-            self.tts_enabled = self._speak(reply.text)
+            self.tts_enabled = self._speak(
+                reply.text
+            )
+
+    def _ask_agent_streaming(
+        self,
+        transcript_text: str,
+    ) -> None:
+        self._transition(
+            AgentState.THINKING,
+            "transcription ready",
+        )
+        print("THINKING (streaming)...", flush=True)
+
+        chunker = IncrementalSentenceChunker(
+            SentenceChunkerConfig(
+                minimum_characters=(
+                    self.config
+                    .streaming_minimum_characters
+                ),
+                maximum_characters=(
+                    self.config
+                    .streaming_maximum_characters
+                ),
+            )
+        )
+        session: StreamingSpeechSession | None = None
+        monitor_started = False
+        printed_stream_header = False
+
+        def start_audio_stream() -> (
+            StreamingSpeechSession
+        ):
+            nonlocal session, monitor_started
+            if session is not None:
+                return session
+
+            if self.state.current is not AgentState.SPEAKING:
+                self._transition(
+                    AgentState.SPEAKING,
+                    "streaming first sentence",
+                )
+
+            self._pending_barge_in_capture = None
+            if self.barge_in.config.enabled:
+                self.microphone.clear_pending()
+                self.barge_in.start(
+                    self.microphone,
+                    on_trigger=(
+                        self._on_barge_in_trigger
+                    ),
+                )
+                monitor_started = True
+
+            session = self.synthesizer.start_stream()
+            return session
+
+        def enqueue_chunks(
+            chunks: tuple[str, ...],
+        ) -> None:
+            if not chunks or not self.tts_enabled:
+                return
+            speech_session = start_audio_stream()
+            for chunk in chunks:
+                speech_session.enqueue(chunk)
+
+        def on_text_delta(delta: str) -> None:
+            nonlocal printed_stream_header
+            if not printed_stream_header:
+                print("JARVIS STREAM: ", end="", flush=True)
+                printed_stream_header = True
+
+            print(delta, end="", flush=True)
+            enqueue_chunks(chunker.feed(delta))
+
+        def on_text_cancel() -> None:
+            nonlocal session
+            nonlocal monitor_started
+            nonlocal printed_stream_header
+
+            chunker.reset()
+            if session is not None:
+                session.cancel()
+                session = None
+
+            if monitor_started:
+                try:
+                    if not self.barge_in.triggered:
+                        self.barge_in.stop(timeout=1.0)
+                finally:
+                    monitor_started = False
+
+            if printed_stream_header:
+                print(
+                    "\nSTREAM: tool call detected; "
+                    "discarding the provisional speech."
+                )
+                printed_stream_header = False
+
+            if self.state.current is AgentState.SPEAKING:
+                self._transition(
+                    AgentState.THINKING,
+                    "stream paused for tool call",
+                )
+
+        reply = self.agent.ask_stream(
+            transcript_text,
+            on_text_delta=on_text_delta,
+            on_text_cancel=on_text_cancel,
+            on_tool_event=self._on_tool_event,
+        )
+
+        if printed_stream_header:
+            print()
+
+        enqueue_chunks(chunker.flush())
+
+        if session is not None:
+            timing = session.finish()
+            self._settle_stream_barge_in(
+                monitor_started=monitor_started
+            )
+            self._record_stream_timing(timing)
+
+        self._log_agent_reply(reply)
+
+    def _ask_agent(
+        self,
+        transcript_text: str,
+    ) -> None:
+        if self.config.streaming_enabled:
+            self._ask_agent_streaming(
+                transcript_text
+            )
+        else:
+            self._ask_agent_buffered(
+                transcript_text
+            )
 
     def _process_capture(self, capture: CaptureResult) -> None:
         self._print_capture(capture)

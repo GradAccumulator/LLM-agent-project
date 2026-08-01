@@ -1,113 +1,77 @@
-# LLM Agent — Step 14: Barge-In Voice Interruption
+# LLM Agent — Step 15: Streaming LLM + Sentence-Level TTS
 
-자비스가 말하는 도중 사용자가 말을 시작하면 음성 출력을 즉시 멈추고,
-그 말을 새로운 후속 명령으로 바로 처리합니다.
+GPT 답변 전체가 완성될 때까지 기다리지 않고, Responses API의 텍스트
+델타를 받아 완성된 문장부터 Edge TTS 큐에 넣습니다.
 
-## 동작 흐름
-
-```text
-사용자: Hey Jarvis, 오늘 일정 설명해줘
-자비스: 오늘은 첫 번째로...
-사용자: 아니, 내일 일정만 말해줘
-자비스 TTS 즉시 중단
-→ 끼어든 음성을 끝까지 캡처
-→ STT
-→ 빠른 명령 또는 GPT 처리
-→ 새 답변
-```
-
-사용자가 끼어들었을 때 같은 말을 다시 반복할 필요가 없습니다.
-
-## 오작동 방지
-
-자비스 자신의 스피커 음성이 마이크로 들어오는 것을 사용자 발화로 잘못
-판단하지 않도록 다음 조건을 함께 사용합니다.
+## 새 흐름
 
 ```text
-TTS 시작 후 0.65초 유예
-별도 Silero VAD 모델
-VAD 확률 0.78 이상
-0.32초 연속 음성
-최소 RMS 0.008
-0.48초 침묵 시 발화 종료
+GPT 첫 문장 생성
+→ 첫 문장 Edge TTS 생성·재생
+→ GPT는 뒤 문장을 계속 생성
+→ 다음 문장이 완성되면 TTS 큐에 추가
 ```
 
-헤드셋을 사용하면 스피커 재입력에 의한 오작동이 더 적습니다.
+터미널에도 답변이 생성되는 즉시 표시됩니다.
+
+```text
+JARVIS STREAM: 첫 번째 문장입니다. 뒤 문장은 계속 생성 중입니다...
+JARVIS META [gpt-5.6-luna | first_text=0.42s | total=1.58s]
+STREAM TTS: first_audio=0.81s | chunks=2/2
+```
+
+## 도구 호출과 함께 사용할 때
+
+함수 호출이 감지되면 임시 음성 큐를 취소하고 도구를 실행한 뒤, 도구
+결과를 반영한 최종 답변 스트림을 새로 읽습니다.
+
+```text
+GPT 임시 응답
+→ 함수 호출 감지
+→ 임시 음성 취소
+→ 로컬 도구 실행
+→ 최종 답변 스트리밍
+```
 
 ## 설정
 
-`config/default.toml`:
-
 ```toml
-[barge_in]
+[streaming]
 enabled = true
-vad_threshold = 0.78
-grace_seconds = 0.65
-trigger_speech_seconds = 0.32
-end_silence_seconds = 0.48
-max_utterance_seconds = 12.0
-pre_roll_seconds = 0.24
-minimum_rms = 0.008
+minimum_sentence_characters = 24
+maximum_chunk_characters = 160
 ```
 
-기능 끄기:
-
-```powershell
-python -m src.main --disable-barge-in
-```
-
-더 민감하게:
+더 빠르게 첫 음성을 시작:
 
 ```powershell
 python -m src.main `
-  --barge-in-vad-threshold 0.68 `
-  --barge-in-trigger-speech 0.24 `
-  --barge-in-minimum-rms 0.005
+  --streaming-minimum-characters 12 `
+  --streaming-maximum-characters 100
 ```
 
-자비스 목소리에 잘못 반응한다면:
+조각이 너무 작으면 말이 끊겨 들릴 수 있으므로 기본값 24자를 먼저
+사용하는 편이 좋습니다.
+
+기존 완성형 응답 방식:
 
 ```powershell
-python -m src.main `
-  --barge-in-vad-threshold 0.86 `
-  --barge-in-trigger-speech 0.40 `
-  --barge-in-minimum-rms 0.012
+python -m src.main --disable-streaming
 ```
 
-## TTS 변경
+## Barge-in 연동
 
-Edge TTS 재생 루프에 중단 이벤트를 추가했습니다. 사용자 발화가 감지되면
-보통 다음 오디오 확인 주기인 약 10ms 안에 현재 재생을 중지합니다.
-
-로그 예시:
+스트리밍 TTS 중에도 기존 말 끊기가 작동합니다.
 
 ```text
-BARGE-IN: voice detected, stopping TTS...
-TTS LATENCY: first_audio=0.51s | chunks=1/4 | total=1.37s | interrupted=True
-BARGE-IN: processing the interruption now.
+자비스가 첫 문장 재생
+→ 사용자 음성 감지
+→ 현재 재생과 남은 TTS 큐 중단
+→ 끼어든 명령 캡처
+→ 새 명령 처리
 ```
 
-JSONL 성능 로그에는 다음 이벤트가 추가됩니다.
-
-```text
-barge_in_captured
-barge_in_command_started
-trigger_latency_seconds
-interrupted
-```
-
-## 기존 기능 유지
-
-```text
-최신 명령 녹음 5개만 유지
-GPT 우회 빠른 명령
-Playwright 브라우저 도구
-연속 대화
-화면 분석
-Windows 창·미디어·클립보드 제어
-```
-
-## 설치 및 실행
+## 실행
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -124,11 +88,11 @@ python -m unittest discover -s tests -v
 ## 커밋 메시지
 
 ```bash
-git commit -m "Add interruptible TTS with barge-in voice capture"
+git commit -m "Stream LLM responses into sentence-level TTS"
 ```
 
 ## 다음 단계
 
-다음은 **스트리밍 LLM + 스트리밍 TTS**입니다. GPT 답변 전체가 완성될 때까지
-기다리지 않고 첫 문장이 생성되는 즉시 읽기 시작해서 체감 응답 시간을 더
-줄입니다.
+다음은 **작업 계획·검증 루프**입니다. 여러 단계의 컴퓨터 작업을 수행할 때
+`계획 → 실행 → 화면·도구 결과 재확인 → 실패 시 수정` 순서로 진행하게
+만들어 장시간 작업의 성공률을 높입니다.

@@ -387,6 +387,15 @@ def build_runtime(
         f"{'enabled' if args.tts_enabled else 'disabled'}"
     )
     print(
+        f"LLM streaming  : "
+        f"{'enabled' if args.streaming_enabled else 'disabled'}"
+    )
+    print(
+        f"Stream chunks  : "
+        f"min={args.streaming_minimum_characters}, "
+        f"max={args.streaming_maximum_characters}"
+    )
+    print(
         f"Conversation   : "
         f"{'continuous' if args.continuous_conversation else 'wake word each turn'}"
     )
@@ -453,6 +462,15 @@ def build_runtime(
                 args.max_saved_audio_files
             ),
             tts_enabled=args.tts_enabled,
+            streaming_enabled=(
+                args.streaming_enabled
+            ),
+            streaming_minimum_characters=(
+                args.streaming_minimum_characters
+            ),
+            streaming_maximum_characters=(
+                args.streaming_maximum_characters
+            ),
             show_state_transitions=(
                 args.show_state_transitions
             ),

@@ -48,3 +48,9 @@ enabled = true
 vad_threshold = 0.78
 trigger_speech_seconds = 0.32
 minimum_rms = 0.008
+
+
+[streaming]
+enabled = true
+minimum_sentence_characters = 24
+maximum_chunk_characters = 160

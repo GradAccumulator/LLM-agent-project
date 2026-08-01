@@ -153,6 +153,21 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
             "tts_mixer_buffer", int, _as_int
         ),
     },
+    "streaming": {
+        "enabled": _SettingSpec(
+            "streaming_enabled", bool
+        ),
+        "minimum_sentence_characters": _SettingSpec(
+            "streaming_minimum_characters",
+            int,
+            _as_int,
+        ),
+        "maximum_chunk_characters": _SettingSpec(
+            "streaming_maximum_characters",
+            int,
+            _as_int,
+        ),
+    },
     "conversation": {
         "enabled": _SettingSpec("continuous_conversation", bool),
         "followup_timeout_seconds": _SettingSpec(
@@ -363,6 +378,8 @@ def _validate_values(values: dict[str, Any]) -> None:
         "tts_chunk_characters",
         "tts_parallel_requests",
         "tts_mixer_buffer",
+        "streaming_minimum_characters",
+        "streaming_maximum_characters",
         "max_saved_audio_files",
         "followup_timeout",
         "max_conversation_turns",
@@ -377,6 +394,17 @@ def _validate_values(values: dict[str, Any]) -> None:
     for name in positive:
         if name in values and values[name] <= 0:
             raise ConfigError(f"{name} must be positive.")
+
+    if (
+        "streaming_minimum_characters" in values
+        and "streaming_maximum_characters" in values
+        and values["streaming_minimum_characters"]
+        > values["streaming_maximum_characters"]
+    ):
+        raise ConfigError(
+            "streaming_minimum_characters must not exceed "
+            "streaming_maximum_characters."
+        )
 
     if values.get("recovery_delay", 0.0) < 0:
         raise ConfigError(

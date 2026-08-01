@@ -65,6 +65,7 @@ class AgentReply:
     response_id: str
     model: str
     elapsed_seconds: float
+    first_text_seconds: float | None
     input_tokens: int | None
     output_tokens: int | None
     total_tokens: int | None
@@ -80,6 +81,8 @@ class ToolLifecycleEvent:
 
 
 ToolLifecycleCallback = Callable[[ToolLifecycleEvent], None]
+TextDeltaCallback = Callable[[str], None]
+TextStreamCancelCallback = Callable[[], None]
 
 
 class JarvisAgent:
@@ -356,6 +359,388 @@ class JarvisAgent:
         except Exception as exc:
             raise self._friendly_api_error(exc) from exc
 
+
+    def _create_response_stream(
+        self,
+        *,
+        input_items: list[Any],
+        previous_response_id: str | None,
+    ) -> Any:
+        request: dict[str, Any] = {
+            "model": self.config.model,
+            "instructions": self.config.instructions,
+            "input": input_items,
+            "reasoning": {
+                "effort": self.config.reasoning_effort
+            },
+            "max_output_tokens": (
+                self.config.max_output_tokens
+            ),
+            "store": self.config.use_memory,
+            "stream": True,
+        }
+
+        if (
+            self.config.tools_enabled
+            and self._tool_registry.names
+        ):
+            request["tools"] = self._tool_registry.schemas
+            request["tool_choice"] = "auto"
+
+        if previous_response_id:
+            request["previous_response_id"] = (
+                previous_response_id
+            )
+
+        try:
+            return self._client.responses.create(
+                **request
+            )
+        except Exception as exc:
+            raise self._friendly_api_error(exc) from exc
+
+    def _consume_response_stream(
+        self,
+        *,
+        input_items: list[Any],
+        previous_response_id: str | None,
+        request_started_at: float,
+        on_text_delta: TextDeltaCallback,
+        on_text_cancel: (
+            TextStreamCancelCallback | None
+        ),
+    ) -> tuple[Any, float | None, bool]:
+        stream = self._create_response_stream(
+            input_items=input_items,
+            previous_response_id=previous_response_id,
+        )
+        response = None
+        first_text_seconds: float | None = None
+        emitted_text = False
+        function_call_seen = False
+        cancelled_text = False
+
+        try:
+            for event in stream:
+                event_type = str(
+                    getattr(event, "type", "") or ""
+                )
+
+                item = getattr(event, "item", None)
+                item_type = str(
+                    getattr(item, "type", "") or ""
+                )
+                is_function_event = (
+                    item_type == "function_call"
+                    or event_type.startswith(
+                        "response.function_call_arguments."
+                    )
+                )
+                if is_function_event:
+                    function_call_seen = True
+                    if (
+                        emitted_text
+                        and not cancelled_text
+                        and on_text_cancel is not None
+                    ):
+                        on_text_cancel()
+                        cancelled_text = True
+
+                if (
+                    event_type
+                    == "response.output_text.delta"
+                ):
+                    delta = str(
+                        getattr(event, "delta", "") or ""
+                    )
+                    if delta and not function_call_seen:
+                        if first_text_seconds is None:
+                            first_text_seconds = (
+                                perf_counter()
+                                - request_started_at
+                            )
+                        on_text_delta(delta)
+                        emitted_text = True
+                    continue
+
+                if event_type == "response.completed":
+                    response = getattr(
+                        event,
+                        "response",
+                        None,
+                    )
+                    continue
+
+                if event_type in {
+                    "response.failed",
+                    "error",
+                }:
+                    detail = (
+                        getattr(event, "error", None)
+                        or getattr(event, "response", None)
+                        or event
+                    )
+                    raise RuntimeError(
+                        f"OpenAI stream failed: {detail}"
+                    )
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            raise self._friendly_api_error(exc) from exc
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+
+        if response is None:
+            get_final = getattr(
+                stream,
+                "get_final_response",
+                None,
+            )
+            if callable(get_final):
+                response = get_final()
+
+        if response is None:
+            raise RuntimeError(
+                "OpenAI stream ended without a completed response."
+            )
+
+        return response, first_text_seconds, emitted_text
+
+    def ask_stream(
+        self,
+        user_text: str,
+        *,
+        on_text_delta: TextDeltaCallback,
+        on_text_cancel: (
+            TextStreamCancelCallback | None
+        ) = None,
+        on_tool_event: (
+            ToolLifecycleCallback | None
+        ) = None,
+    ) -> AgentReply:
+        user_text = user_text.strip()
+        if not user_text:
+            raise ValueError(
+                "LLM input text must not be empty."
+            )
+
+        conversation_parent = (
+            self._previous_response_id
+            if self.config.use_memory
+            else None
+        )
+        input_items: list[Any] = [
+            {
+                "role": "user",
+                "content": user_text,
+            }
+        ]
+
+        tool_records: list[ToolCallRecord] = []
+        input_tokens: int | None = None
+        output_tokens: int | None = None
+        total_tokens: int | None = None
+        first_text_seconds: float | None = None
+
+        started_at = perf_counter()
+        response, round_first_text, emitted_text = (
+            self._consume_response_stream(
+                input_items=input_items,
+                previous_response_id=(
+                    conversation_parent
+                ),
+                request_started_at=started_at,
+                on_text_delta=on_text_delta,
+                on_text_cancel=on_text_cancel,
+            )
+        )
+        if round_first_text is not None:
+            first_text_seconds = round_first_text
+
+        for round_index in range(
+            self.config.max_tool_rounds + 1
+        ):
+            usage = getattr(response, "usage", None)
+            input_tokens = self._add_optional(
+                input_tokens,
+                self._usage_value(
+                    usage,
+                    "input_tokens",
+                ),
+            )
+            output_tokens = self._add_optional(
+                output_tokens,
+                self._usage_value(
+                    usage,
+                    "output_tokens",
+                ),
+            )
+            total_tokens = self._add_optional(
+                total_tokens,
+                self._usage_value(
+                    usage,
+                    "total_tokens",
+                ),
+            )
+
+            function_calls = [
+                item
+                for item in getattr(
+                    response,
+                    "output",
+                    (),
+                )
+                if getattr(item, "type", None)
+                == "function_call"
+            ]
+            if not function_calls:
+                break
+
+            if emitted_text and on_text_cancel is not None:
+                on_text_cancel()
+
+            if (
+                round_index
+                >= self.config.max_tool_rounds
+            ):
+                raise RuntimeError(
+                    "The model exceeded the maximum "
+                    "number of tool rounds."
+                )
+
+            input_items.extend(
+                getattr(response, "output", ())
+            )
+
+            for call in function_calls:
+                tool_name = str(
+                    getattr(call, "name", "")
+                )
+                if on_tool_event is not None:
+                    on_tool_event(
+                        ToolLifecycleEvent(
+                            phase="started",
+                            name=tool_name,
+                        )
+                    )
+
+                result = self._tool_registry.execute(
+                    tool_name,
+                    str(
+                        getattr(
+                            call,
+                            "arguments",
+                            "{}",
+                        )
+                    ),
+                )
+
+                if on_tool_event is not None:
+                    on_tool_event(
+                        ToolLifecycleEvent(
+                            phase="finished",
+                            name=result.name,
+                            success=result.success,
+                            elapsed_seconds=(
+                                result.elapsed_seconds
+                            ),
+                        )
+                    )
+
+                tool_records.append(
+                    ToolCallRecord(
+                        name=result.name,
+                        arguments=result.arguments,
+                        success=result.success,
+                        output=result.output,
+                        elapsed_seconds=(
+                            result.elapsed_seconds
+                        ),
+                    )
+                )
+
+                output_content = (
+                    self._tool_output_content(
+                        tool_name=result.name,
+                        success=result.success,
+                        output=result.output,
+                    )
+                )
+                input_items.append(
+                    {
+                        "type": (
+                            "function_call_output"
+                        ),
+                        "call_id": str(
+                            getattr(
+                                call,
+                                "call_id",
+                                "",
+                            )
+                        ),
+                        "output": output_content,
+                    }
+                )
+
+            response, round_first_text, emitted_text = (
+                self._consume_response_stream(
+                    input_items=input_items,
+                    previous_response_id=(
+                        conversation_parent
+                    ),
+                    request_started_at=started_at,
+                    on_text_delta=on_text_delta,
+                    on_text_cancel=on_text_cancel,
+                )
+            )
+            if (
+                first_text_seconds is None
+                and round_first_text is not None
+            ):
+                first_text_seconds = round_first_text
+
+        elapsed_seconds = perf_counter() - started_at
+        text = str(
+            getattr(response, "output_text", "")
+            or ""
+        ).strip()
+        if not text:
+            text = "응답을 생성하지 못했습니다."
+
+        if not emitted_text:
+            on_text_delta(text)
+            if first_text_seconds is None:
+                first_text_seconds = elapsed_seconds
+
+        response_id = str(
+            getattr(response, "id", "") or ""
+        )
+        if self.config.use_memory and response_id:
+            self._previous_response_id = response_id
+
+        return AgentReply(
+            text=text,
+            response_id=response_id,
+            model=str(
+                getattr(
+                    response,
+                    "model",
+                    self.config.model,
+                )
+            ),
+            elapsed_seconds=elapsed_seconds,
+            first_text_seconds=first_text_seconds,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            tool_calls=tuple(tool_records),
+        )
+
     def ask(
         self,
         user_text: str,
@@ -484,6 +869,7 @@ class JarvisAgent:
             response_id=response_id,
             model=str(getattr(response, "model", self.config.model)),
             elapsed_seconds=elapsed_seconds,
+            first_text_seconds=None,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,

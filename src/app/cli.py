@@ -290,6 +290,52 @@ def build_parser(
 
     _bool_pair(
         parser,
+        destination="streaming_enabled",
+        positive=("--streaming",),
+        negative=("--disable-streaming",),
+        positive_help=(
+            "Stream GPT text into sentence-level TTS."
+        ),
+        negative_help=(
+            "Wait for the full GPT response before TTS."
+        ),
+    )
+    parser.add_argument(
+        "--streaming-minimum-characters",
+        type=int,
+        default=24,
+    )
+    parser.add_argument(
+        "--streaming-maximum-characters",
+        type=int,
+        default=160,
+    )
+
+    _bool_pair(
+        parser,
+        destination="continuous_conversation",
+        positive=("--continuous-conversation",),
+        negative=("--disable-continuous-conversation",),
+        positive_help=(
+            "Allow follow-up commands without the wake word."
+        ),
+        negative_help=(
+            "Require the wake word before every command."
+        ),
+    )
+    parser.add_argument(
+        "--followup-timeout",
+        type=float,
+        default=12.0,
+    )
+    parser.add_argument(
+        "--max-conversation-turns",
+        type=int,
+        default=8,
+    )
+
+    _bool_pair(
+        parser,
         destination="browser_automation",
         positive=("--browser-automation",),
         negative=("--disable-browser-automation",),
@@ -431,6 +477,8 @@ def build_parser(
         llm_memory=True,
         tools_enabled=True,
         tts_enabled=True,
+        streaming_enabled=True,
+        continuous_conversation=True,
         browser_automation=True,
         browser_headless=False,
         fast_path_enabled=True,
