@@ -5,6 +5,13 @@ import json
 from time import perf_counter
 from typing import Any, Callable, Mapping
 
+from src.planning import (
+    TaskPlanTracker,
+    is_action_tool,
+    is_planning_tool,
+    verify_action_result,
+)
+
 
 ToolHandler = Callable[
     ...,
@@ -36,6 +43,9 @@ class ToolExecutionResult:
     success: bool
     output: str
     elapsed_seconds: float
+    verified: bool | None = None
+    verification: dict[str, Any] | None = None
+    plan_progress: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +55,9 @@ class ToolCallRecord:
     success: bool
     output: str
     elapsed_seconds: float
+    verified: bool | None = None
+    verification: dict[str, Any] | None = None
+    plan_progress: dict[str, Any] | None = None
 
 
 class ToolRegistry:
@@ -52,6 +65,7 @@ class ToolRegistry:
         self._tools: dict[str, ToolSpec] = {}
         self._closers: list[Callable[[], Any]] = []
         self._closed = False
+        self.plan_tracker = TaskPlanTracker()
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -64,12 +78,30 @@ class ToolRegistry:
             for tool in self._tools.values()
         ]
 
+    def begin_request(
+        self,
+        *,
+        planning_required: bool,
+        max_steps: int,
+        max_repair_attempts: int,
+    ) -> None:
+        self.plan_tracker.begin_request(
+            required=planning_required,
+            max_steps=max_steps,
+            max_repair_attempts=max_repair_attempts,
+        )
+
+    def plan_snapshot(self) -> dict[str, Any]:
+        return self.plan_tracker.snapshot()
+
     def register_closer(
         self,
         closer: Callable[[], Any],
     ) -> None:
         if self._closed:
-            raise RuntimeError("Tool registry is already closed.")
+            raise RuntimeError(
+                "Tool registry is already closed."
+            )
         self._closers.append(closer)
 
     def close(self) -> None:
@@ -110,27 +142,39 @@ class ToolRegistry:
 
         self._tools[name] = tool
 
-    @staticmethod
     def _failure(
+        self,
         *,
         name: str,
         arguments: dict[str, Any],
         error: str,
         elapsed_seconds: float = 0.0,
+        verified: bool | None = None,
+        verification: dict[str, Any] | None = None,
+        plan_progress: dict[str, Any] | None = None,
     ) -> ToolExecutionResult:
-        output = json.dumps(
-            {
-                "success": False,
-                "error": error,
-            },
-            ensure_ascii=False,
-        )
+        payload: dict[str, Any] = {
+            "success": False,
+            "error": error,
+        }
+        if verification is not None:
+            payload["verification"] = verification
+        if plan_progress is not None:
+            payload["plan_progress"] = plan_progress
+
         return ToolExecutionResult(
             name=name,
             arguments=arguments,
             success=False,
-            output=output,
+            output=json.dumps(
+                payload,
+                ensure_ascii=False,
+                default=str,
+            ),
             elapsed_seconds=elapsed_seconds,
+            verified=verified,
+            verification=verification,
+            plan_progress=plan_progress,
         )
 
     def execute(
@@ -147,7 +191,9 @@ class ToolRegistry:
             )
 
         try:
-            loaded = json.loads(arguments_json or "{}")
+            loaded = json.loads(
+                arguments_json or "{}"
+            )
         except json.JSONDecodeError as exc:
             return self._failure(
                 name=name,
@@ -167,34 +213,157 @@ class ToolRegistry:
                 ),
             )
 
+        action = is_action_tool(name)
+        planning_tool = is_planning_tool(name)
+        if (
+            action
+            and self.plan_tracker.required
+            and not self.plan_tracker.active
+        ):
+            snapshot = self.plan_tracker.snapshot()
+            return self._failure(
+                name=name,
+                arguments=loaded,
+                error=(
+                    "This multi-step request requires "
+                    "begin_task_plan before action tools."
+                ),
+                verified=False,
+                verification={
+                    "verified": False,
+                    "strength": "precondition",
+                    "tool": name,
+                    "evidence": {
+                        "required_tool": (
+                            "begin_task_plan"
+                        )
+                    },
+                },
+                plan_progress=snapshot,
+            )
+
+        if (
+            action
+            and self.plan_tracker.status.value
+            in {"failed", "abandoned", "completed"}
+            and self.plan_tracker.required
+        ):
+            snapshot = self.plan_tracker.snapshot()
+            return self._failure(
+                name=name,
+                arguments=loaded,
+                error=(
+                    "No more action tools are allowed because "
+                    f"the task plan is {snapshot['status']}."
+                ),
+                verified=False,
+                plan_progress=snapshot,
+            )
+
         started_at = perf_counter()
         try:
             result = tool.handler(**loaded)
-            elapsed_seconds = perf_counter() - started_at
+            elapsed_seconds = (
+                perf_counter() - started_at
+            )
             payload = (
                 dict(result)
                 if isinstance(result, Mapping)
                 else {"result": result}
             )
-            payload = {"success": True, **payload}
-            output = json.dumps(
-                payload,
-                ensure_ascii=False,
-                default=str,
-            )
-            return ToolExecutionResult(
-                name=name,
-                arguments=loaded,
-                success=True,
-                output=output,
-                elapsed_seconds=elapsed_seconds,
-            )
         except Exception as exc:
+            elapsed_seconds = (
+                perf_counter() - started_at
+            )
+            verification = None
+            progress = None
+            if action:
+                verification = {
+                    "verified": False,
+                    "strength": "execution",
+                    "tool": name,
+                    "evidence": {
+                        "error": (
+                            str(exc)
+                            or type(exc).__name__
+                        )
+                    },
+                }
+                progress = (
+                    self.plan_tracker.record_action(
+                        tool_name=name,
+                        verified=False,
+                        verification=verification,
+                    )
+                )
+
             return self._failure(
                 name=name,
                 arguments=loaded,
-                error=str(exc) or type(exc).__name__,
-                elapsed_seconds=(
-                    perf_counter() - started_at
+                error=(
+                    str(exc)
+                    or type(exc).__name__
                 ),
+                elapsed_seconds=elapsed_seconds,
+                verified=(
+                    False if action else None
+                ),
+                verification=verification,
+                plan_progress=progress,
             )
+
+        verification = None
+        progress = None
+        verified: bool | None = None
+
+        if action:
+            verification = verify_action_result(
+                name,
+                loaded,
+                payload,
+            )
+            verified = bool(
+                verification.get("verified")
+            )
+            progress = (
+                self.plan_tracker.record_action(
+                    tool_name=name,
+                    verified=verified,
+                    verification=verification,
+                )
+            )
+            payload["verification"] = verification
+            if progress is not None:
+                payload["plan_progress"] = progress
+
+        elif planning_tool:
+            # Planning tool handlers return the current snapshot.
+            if isinstance(payload.get("result"), dict):
+                progress = payload["result"]
+            elif "status" in payload:
+                progress = dict(payload)
+
+        payload = {"success": True, **payload}
+        success = True
+        if action and verified is False:
+            success = False
+            payload["success"] = False
+            payload["error"] = (
+                "The action ran, but its postcondition "
+                "could not be verified."
+            )
+
+        return ToolExecutionResult(
+            name=name,
+            arguments=loaded,
+            success=success,
+            output=json.dumps(
+                payload,
+                ensure_ascii=False,
+                default=str,
+            ),
+            elapsed_seconds=elapsed_seconds,
+            verified=verified,
+            verification=verification,
+            plan_progress=progress,
+        )

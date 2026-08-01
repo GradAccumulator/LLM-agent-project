@@ -62,6 +62,14 @@ def build_parser(
     )
 
     parser.add_argument(
+        "--list-browsers",
+        action="store_true",
+        help=(
+            "List detected Edge, Chrome, and common "
+            "Chromium-based browser installations."
+        ),
+    )
+    parser.add_argument(
         "--list-devices",
         action="store_true",
     )
@@ -223,7 +231,7 @@ def build_parser(
     parser.add_argument(
         "--llm-max-tool-rounds",
         type=int,
-        default=4,
+        default=12,
     )
     parser.add_argument(
         "--vision-detail",
@@ -290,6 +298,29 @@ def build_parser(
 
     _bool_pair(
         parser,
+        destination="planning_enabled",
+        positive=("--planning",),
+        negative=("--disable-planning",),
+        positive_help=(
+            "Plan and verify multi-step computer tasks."
+        ),
+        negative_help=(
+            "Disable enforced planning for multi-step tasks."
+        ),
+    )
+    parser.add_argument(
+        "--planning-max-steps",
+        type=int,
+        default=6,
+    )
+    parser.add_argument(
+        "--planning-max-repair-attempts",
+        type=int,
+        default=2,
+    )
+
+    _bool_pair(
+        parser,
         destination="streaming_enabled",
         positive=("--streaming",),
         negative=("--disable-streaming",),
@@ -342,18 +373,47 @@ def build_parser(
         positive_help="Enable Playwright browser tools.",
         negative_help="Disable Playwright browser tools.",
     )
+    parser.add_argument(
+        "--browser",
+        dest="browser_selection",
+        choices=(
+            "msedge",
+            "msedge-beta",
+            "msedge-dev",
+            "msedge-canary",
+            "chrome",
+            "chrome-beta",
+            "chrome-dev",
+            "chrome-canary",
+            "chromium",
+            "custom",
+        ),
+        default="msedge",
+        help=(
+            "Browser used by automation and fast-path web commands."
+        ),
+    )
+    parser.add_argument(
+        "--browser-executable",
+        dest="browser_executable_path",
+        type=Path,
+        default=None,
+        help=(
+            "Executable path used only with --browser custom."
+        ),
+    )
     _bool_pair(
         parser,
         destination="browser_headless",
         positive=("--browser-headless",),
         negative=("--browser-headed",),
-        positive_help="Run Playwright Chromium without a visible window.",
-        negative_help="Show the Playwright Chromium window.",
+        positive_help="Run the selected browser without a visible window.",
+        negative_help="Show the selected browser window.",
     )
     parser.add_argument(
         "--browser-profile-dir",
         type=Path,
-        default=Path("browser_profile"),
+        default=Path("browser_profiles"),
     )
     parser.add_argument(
         "--browser-navigation-timeout",
@@ -477,6 +537,7 @@ def build_parser(
         llm_memory=True,
         tools_enabled=True,
         tts_enabled=True,
+        planning_enabled=True,
         streaming_enabled=True,
         continuous_conversation=True,
         browser_automation=True,
@@ -530,6 +591,7 @@ def print_effective_config(
         "no_user_config",
         "print_config",
         "list_devices",
+        "list_browsers",
         "list_tts_voices",
     }
     values = {

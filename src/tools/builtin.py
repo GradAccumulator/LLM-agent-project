@@ -10,10 +10,10 @@ import sys
 from urllib.parse import quote_plus
 
 from src.browser import BrowserAutomationConfig, BrowserController
-import webbrowser
 
 from .browser_tools import register_browser_tools
 from .registry import ToolRegistry, ToolSpec
+from .planning_tools import register_planning_tools
 from .windows_desktop import (
     focus_window,
     get_active_window,
@@ -331,6 +331,77 @@ def build_default_tool_registry(
     browser_config: BrowserAutomationConfig | None = None,
 ) -> ToolRegistry:
     registry = ToolRegistry()
+    register_planning_tools(registry)
+
+    browser_controller = BrowserController(
+        browser_config or BrowserAutomationConfig()
+    )
+
+    def open_application_selected(
+        application: str,
+    ) -> dict:
+        if application != "browser":
+            return open_application(application)
+
+        result = browser_controller.open_page(
+            "https://www.google.com/"
+        )
+        return {
+            "application": "browser",
+            **result,
+            "message": (
+                f"{browser_controller.config.display_name} "
+                "launch request was sent."
+            ),
+        }
+
+    def open_website_selected(site: str) -> dict:
+        url = _WEBSITE_URLS.get(site)
+        if url is None:
+            raise ValueError(
+                f"Unsupported website: {site}"
+            )
+        result = browser_controller.open_page(url)
+        return {
+            "site": site,
+            **result,
+            "message": (
+                f"Website opened in "
+                f"{browser_controller.config.display_name}."
+            ),
+        }
+
+    def search_browser_selected(
+        engine: str,
+        query: str,
+    ) -> dict:
+        query = query.strip()
+        if engine not in _SEARCH_URLS:
+            raise ValueError(
+                f"Unsupported search engine: {engine}"
+            )
+        if not query:
+            raise ValueError(
+                "Search query must not be empty."
+            )
+        if len(query) > 200:
+            raise ValueError(
+                "Search query must not exceed 200 characters."
+            )
+
+        url = _SEARCH_URLS[engine].format(
+            query=quote_plus(query)
+        )
+        result = browser_controller.open_page(url)
+        return {
+            "engine": engine,
+            "query": query,
+            **result,
+            "message": (
+                f"Search opened in "
+                f"{browser_controller.config.display_name}."
+            ),
+        }
 
     registry.register(
         ToolSpec(
@@ -378,14 +449,14 @@ def build_default_tool_registry(
                 "required": ["application"],
                 "additionalProperties": False,
             },
-            handler=open_application,
+            handler=open_application_selected,
         )
     )
     registry.register(
         ToolSpec(
             name="open_website",
             description=(
-                "허용 목록에 있는 웹사이트를 기본 브라우저에서 연다."
+                "허용 목록의 웹사이트를 설정에서 선택한 브라우저에서 연다."
             ),
             parameters={
                 "type": "object",
@@ -399,7 +470,7 @@ def build_default_tool_registry(
                 "required": ["site"],
                 "additionalProperties": False,
             },
-            handler=open_website,
+            handler=open_website_selected,
         )
     )
     registry.register(
@@ -407,7 +478,7 @@ def build_default_tool_registry(
             name="search_browser",
             description=(
                 "사용자가 명시적으로 검색을 요청했을 때 Google, Naver "
-                "또는 YouTube 검색 결과를 기본 브라우저에서 연다."
+                "또는 YouTube 검색 결과를 설정에서 선택한 브라우저에서 연다."
             ),
             parameters={
                 "type": "object",
@@ -425,7 +496,7 @@ def build_default_tool_registry(
                 "required": ["engine", "query"],
                 "additionalProperties": False,
             },
-            handler=search_browser,
+            handler=search_browser_selected,
         )
     )
     registry.register(
@@ -634,9 +705,9 @@ def build_default_tool_registry(
         )
     )
 
-    browser_controller = BrowserController(
-        browser_config or BrowserAutomationConfig()
+    register_browser_tools(
+        registry,
+        browser_controller,
     )
-    register_browser_tools(registry, browser_controller)
 
     return registry

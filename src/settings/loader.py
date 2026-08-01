@@ -33,6 +33,15 @@ def _as_path(value: Any) -> Path:
     return Path(value)
 
 
+def _as_optional_path(value: Any) -> Path | None:
+    if not isinstance(value, str):
+        raise ConfigError(
+            "Optional path values must be TOML strings."
+        )
+    stripped = value.strip()
+    return Path(stripped) if stripped else None
+
+
 def _as_language(value: Any) -> str | None:
     if not isinstance(value, str):
         raise ConfigError("STT language must be a string.")
@@ -153,6 +162,19 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
             "tts_mixer_buffer", int, _as_int
         ),
     },
+    "planning": {
+        "enabled": _SettingSpec(
+            "planning_enabled", bool
+        ),
+        "max_steps": _SettingSpec(
+            "planning_max_steps", int, _as_int
+        ),
+        "max_repair_attempts": _SettingSpec(
+            "planning_max_repair_attempts",
+            int,
+            _as_int,
+        ),
+    },
     "streaming": {
         "enabled": _SettingSpec(
             "streaming_enabled", bool
@@ -180,6 +202,14 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
     "browser": {
         "enabled": _SettingSpec("browser_automation", bool),
         "headless": _SettingSpec("browser_headless", bool),
+        "browser": _SettingSpec(
+            "browser_selection", str
+        ),
+        "executable_path": _SettingSpec(
+            "browser_executable_path",
+            str,
+            _as_optional_path,
+        ),
         "profile_directory": _SettingSpec(
             "browser_profile_dir", str, _as_path
         ),
@@ -378,6 +408,7 @@ def _validate_values(values: dict[str, Any]) -> None:
         "tts_chunk_characters",
         "tts_parallel_requests",
         "tts_mixer_buffer",
+        "planning_max_steps",
         "streaming_minimum_characters",
         "streaming_maximum_characters",
         "max_saved_audio_files",
@@ -394,6 +425,21 @@ def _validate_values(values: dict[str, Any]) -> None:
     for name in positive:
         if name in values and values[name] <= 0:
             raise ConfigError(f"{name} must be positive.")
+
+    if (
+        "planning_max_steps" in values
+        and values["planning_max_steps"] < 2
+    ):
+        raise ConfigError(
+            "planning_max_steps must be at least 2."
+        )
+    if values.get(
+        "planning_max_repair_attempts",
+        0,
+    ) < 0:
+        raise ConfigError(
+            "planning_max_repair_attempts must not be negative."
+        )
 
     if (
         "streaming_minimum_characters" in values
@@ -428,6 +474,18 @@ def _validate_values(values: dict[str, Any]) -> None:
         "vision_detail": {
             "low", "high", "original", "auto"
         },
+        "browser_selection": {
+            "msedge",
+            "msedge-beta",
+            "msedge-dev",
+            "msedge-canary",
+            "chrome",
+            "chrome-beta",
+            "chrome-dev",
+            "chrome-canary",
+            "chromium",
+            "custom",
+        },
     }
     for name, allowed in choices.items():
         if name in values and values[name] not in allowed:
@@ -435,6 +493,30 @@ def _validate_values(values: dict[str, Any]) -> None:
                 f"{name} must be one of: "
                 + ", ".join(sorted(allowed))
             )
+
+    browser_selection = values.get(
+        "browser_selection"
+    )
+    browser_executable = values.get(
+        "browser_executable_path"
+    )
+    if (
+        browser_selection == "custom"
+        and browser_executable is None
+    ):
+        raise ConfigError(
+            "[browser].executable_path is required "
+            "when browser='custom'."
+        )
+    if (
+        browser_selection
+        and browser_selection != "custom"
+        and browser_executable is not None
+    ):
+        raise ConfigError(
+            "[browser].executable_path is only valid "
+            "when browser='custom'."
+        )
 
     if "tts_rate" in values and not -100 <= values["tts_rate"] <= 100:
         raise ConfigError(

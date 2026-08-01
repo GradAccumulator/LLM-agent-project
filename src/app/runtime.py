@@ -427,6 +427,9 @@ class VoiceAssistantRuntime:
                 'tool': event.name,
                 'success': event.success,
                 'elapsed_seconds': event.elapsed_seconds,
+                'verified': event.verified,
+                'verification': event.verification,
+                'plan_progress': event.plan_progress,
             })
             self._transition(AgentState.THINKING, f'tool finished: {event.name} ({status})')
             return
@@ -623,6 +626,24 @@ class VoiceAssistantRuntime:
                 f"TOOL RESULT: {status} "
                 f"({tool_call.elapsed_seconds:.3f}s)"
             )
+            if tool_call.verified is not None:
+                verification_status = (
+                    "verified"
+                    if tool_call.verified
+                    else "not verified"
+                )
+                print(
+                    f"VERIFY: {verification_status}"
+                )
+            if tool_call.plan_progress is not None:
+                progress = tool_call.plan_progress
+                print(
+                    "PLAN: "
+                    f"{progress.get('status')} "
+                    f"{progress.get('completed_steps')}/"
+                    f"{progress.get('total_steps')} "
+                    f"| current={progress.get('current_step')}"
+                )
             if not tool_call.success:
                 print(tool_call.output)
 
@@ -642,6 +663,15 @@ class VoiceAssistantRuntime:
             f"{usage_text} | "
             f"tools={len(reply.tool_calls)}]"
         )
+
+        plan = reply.plan_snapshot
+        if reply.planning_required and plan is not None:
+            print(
+                "TASK PLAN: "
+                f"{plan.get('status')} "
+                f"{plan.get('completed_steps')}/"
+                f"{plan.get('total_steps')}"
+            )
 
         self.metrics.log(
             "llm_completed",
@@ -670,6 +700,28 @@ class VoiceAssistantRuntime:
                 "reply_characters": len(reply.text),
                 "streaming": (
                     self.config.streaming_enabled
+                ),
+                "planning_required": (
+                    reply.planning_required
+                ),
+                "plan_status": (
+                    reply.plan_snapshot.get("status")
+                    if reply.plan_snapshot
+                    else None
+                ),
+                "plan_completed_steps": (
+                    reply.plan_snapshot.get(
+                        "completed_steps"
+                    )
+                    if reply.plan_snapshot
+                    else None
+                ),
+                "plan_total_steps": (
+                    reply.plan_snapshot.get(
+                        "total_steps"
+                    )
+                    if reply.plan_snapshot
+                    else None
                 ),
             },
             private={"reply": reply.text},

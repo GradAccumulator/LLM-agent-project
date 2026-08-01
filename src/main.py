@@ -17,6 +17,12 @@ def main() -> int:
         print_effective_config(args, loaded)
         return 0
 
+    if args.list_browsers:
+        from src.browser import format_installed_browsers
+
+        print(format_installed_browsers())
+        return 0
+
     try:
         import sounddevice as sd
 

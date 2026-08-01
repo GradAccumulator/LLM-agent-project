@@ -199,6 +199,10 @@ def build_runtime(
     browser_config = BrowserAutomationConfig(
         enabled=args.browser_automation,
         headless=args.browser_headless,
+        browser=args.browser_selection,
+        executable_path=(
+            args.browser_executable_path
+        ),
         profile_directory=args.browser_profile_dir,
         navigation_timeout_seconds=(
             args.browser_navigation_timeout
@@ -245,6 +249,13 @@ def build_runtime(
                 args.tools_enabled
             ),
             vision_detail=args.vision_detail,
+            planning_enabled=args.planning_enabled,
+            planning_max_steps=(
+                args.planning_max_steps
+            ),
+            planning_max_repair_attempts=(
+                args.planning_max_repair_attempts
+            ),
         ),
         tool_registry=tool_registry,
     )
@@ -387,6 +398,15 @@ def build_runtime(
         f"{'enabled' if args.tts_enabled else 'disabled'}"
     )
     print(
+        f"Task planning  : "
+        f"{'enabled' if args.planning_enabled else 'disabled'}"
+    )
+    print(
+        f"Plan limits    : "
+        f"steps={args.planning_max_steps}, "
+        f"repairs={args.planning_max_repair_attempts}"
+    )
+    print(
         f"LLM streaming  : "
         f"{'enabled' if args.streaming_enabled else 'disabled'}"
     )
@@ -405,6 +425,15 @@ def build_runtime(
         f"Browser tools  : "
         f"{'enabled' if args.browser_automation else 'disabled'} "
         f"({'headless' if args.browser_headless else 'headed'})"
+    )
+    print(
+        f"Browser        : "
+        f"{browser_config.display_name} "
+        f"({browser_config.browser})"
+    )
+    print(
+        f"Browser profile: "
+        f"{browser_config.effective_profile_directory}"
     )
     print(
         f"Fast path      : "

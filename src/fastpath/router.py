@@ -269,6 +269,13 @@ class LocalCommandRouter:
         if not self.config.enabled:
             return None
 
+        self.registry.begin_request(
+            planning_required=False,
+            max_steps=1,
+            max_repair_attempts=0,
+        )
+
+
         original = text.strip()
         normalized = _normalize(original)
         if not normalized:

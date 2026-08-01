@@ -11,6 +11,8 @@ from typing import Any, Callable
 
 from dotenv import load_dotenv
 
+from src.planning import should_plan_request
+
 from src.tools import (
     ToolCallRecord,
     ToolRegistry,
@@ -40,6 +42,8 @@ DEFAULT_INSTRUCTIONS = """\
 - 결제, 구매, 송금, 계정 삭제, 메시지 전송처럼 중요한 웹 동작은 자동 실행하지 말고 사용자 확인이 필요하다고 답한다.
 - 비밀번호, 카드, 신원 정보, 계좌 정보 입력은 브라우저 도구로 처리하지 않는다.
 - 등록되지 않은 컴퓨터 작업은 아직 지원하지 않는다고 솔직하게 말한다.
+- 여러 단계의 컴퓨터 작업은 계획을 세우고, 한 단계씩 실행하며, 도구 결과의 verification과 plan_progress를 확인한 뒤 다음 단계로 넘어간다.
+- verification이 false이면 완료했다고 말하지 말고 현재 단계를 수정해 재시도한다.
 - 확실하지 않은 내용은 추측해서 단정하지 않는다.
 """
 
@@ -56,6 +60,9 @@ class AgentConfig:
     tools_enabled: bool = True
     vision_detail: str = "original"
     max_vision_image_bytes: int = 25 * 1024 * 1024
+    planning_enabled: bool = True
+    planning_max_steps: int = 6
+    planning_max_repair_attempts: int = 2
     instructions: str = DEFAULT_INSTRUCTIONS
 
 
@@ -70,6 +77,8 @@ class AgentReply:
     output_tokens: int | None
     total_tokens: int | None
     tool_calls: tuple[ToolCallRecord, ...]
+    planning_required: bool = False
+    plan_snapshot: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +87,9 @@ class ToolLifecycleEvent:
     name: str
     success: bool | None = None
     elapsed_seconds: float | None = None
+    verified: bool | None = None
+    verification: dict[str, Any] | None = None
+    plan_progress: dict[str, Any] | None = None
 
 
 ToolLifecycleCallback = Callable[[ToolLifecycleEvent], None]
@@ -126,6 +138,14 @@ class JarvisAgent:
             )
         if config.max_vision_image_bytes <= 0:
             raise ValueError("max_vision_image_bytes must be positive.")
+        if config.planning_max_steps < 2:
+            raise ValueError(
+                "planning_max_steps must be at least 2."
+            )
+        if config.planning_max_repair_attempts < 0:
+            raise ValueError(
+                "planning_max_repair_attempts must not be negative."
+            )
 
         load_dotenv()
         api_key = os.environ.get("OPENAI_API_KEY", "").strip()
@@ -156,6 +176,8 @@ class JarvisAgent:
             else build_default_tool_registry()
         )
         self._previous_response_id: str | None = None
+        self._planning_required = False
+        self._request_instructions = config.instructions
 
     @property
     def previous_response_id(self) -> str | None:
@@ -166,6 +188,61 @@ class JarvisAgent:
         if not self.config.tools_enabled:
             return ()
         return self._tool_registry.names
+
+
+    @staticmethod
+    def should_plan_text(
+        user_text: str,
+        *,
+        enabled: bool = True,
+    ) -> bool:
+        return should_plan_request(
+            user_text,
+            enabled=enabled,
+        )
+
+    def _prepare_request(
+        self,
+        user_text: str,
+    ) -> bool:
+        planning_required = self.should_plan_text(
+            user_text,
+            enabled=(
+                self.config.planning_enabled
+                and self.config.tools_enabled
+            ),
+        )
+        self._planning_required = planning_required
+        self._tool_registry.begin_request(
+            planning_required=planning_required,
+            max_steps=self.config.planning_max_steps,
+            max_repair_attempts=(
+                self.config.planning_max_repair_attempts
+            ),
+        )
+
+        if planning_required:
+            protocol = """
+이번 요청은 다단계 컴퓨터 작업으로 판정되었다.
+행동 도구를 실행하기 전에 반드시 begin_task_plan을 호출하라.
+계획은 2~6개의 짧은 단계로 만들고, 각 단계는 하나의 검증 가능한 행동 또는 관찰이어야 한다.
+현재 단계 하나만 실행하고 도구 출력의 verification.verified와 plan_progress를 확인하라.
+검증에 실패하면 다음 단계로 넘어가지 말고 현재 단계를 관찰·수정한 뒤 재시도하라.
+관찰만으로 끝난 단계는 complete_plan_step에 구체적인 증거를 넣어 완료하라.
+모든 단계가 completed가 된 뒤 finish_task_plan을 호출하고 최종 답변을 하라.
+계획이 failed 또는 abandoned이면 성공했다고 말하지 마라.
+"""
+            self._request_instructions = (
+                self.config.instructions
+                + "\n"
+                + protocol.strip()
+            )
+        else:
+            self._request_instructions = (
+                self.config.instructions
+            )
+
+        return planning_required
 
     def reset_conversation(self) -> None:
         self._previous_response_id = None
@@ -340,7 +417,7 @@ class JarvisAgent:
     ) -> Any:
         request: dict[str, Any] = {
             "model": self.config.model,
-            "instructions": self.config.instructions,
+            "instructions": self._request_instructions,
             "input": input_items,
             "reasoning": {"effort": self.config.reasoning_effort},
             "max_output_tokens": self.config.max_output_tokens,
@@ -368,7 +445,7 @@ class JarvisAgent:
     ) -> Any:
         request: dict[str, Any] = {
             "model": self.config.model,
-            "instructions": self.config.instructions,
+            "instructions": self._request_instructions,
             "input": input_items,
             "reasoning": {
                 "effort": self.config.reasoning_effort
@@ -529,6 +606,10 @@ class JarvisAgent:
                 "LLM input text must not be empty."
             )
 
+        planning_required = self._prepare_request(
+            user_text
+        )
+
         conversation_parent = (
             self._previous_response_id
             if self.config.use_memory
@@ -649,6 +730,9 @@ class JarvisAgent:
                             elapsed_seconds=(
                                 result.elapsed_seconds
                             ),
+                            verified=result.verified,
+                            verification=result.verification,
+                            plan_progress=result.plan_progress,
                         )
                     )
 
@@ -661,6 +745,9 @@ class JarvisAgent:
                         elapsed_seconds=(
                             result.elapsed_seconds
                         ),
+                        verified=result.verified,
+                        verification=result.verification,
+                        plan_progress=result.plan_progress,
                     )
                 )
 
@@ -739,6 +826,10 @@ class JarvisAgent:
             output_tokens=output_tokens,
             total_tokens=total_tokens,
             tool_calls=tuple(tool_records),
+            planning_required=planning_required,
+            plan_snapshot=(
+                self._tool_registry.plan_snapshot()
+            ),
         )
 
     def ask(
@@ -750,6 +841,10 @@ class JarvisAgent:
         user_text = user_text.strip()
         if not user_text:
             raise ValueError("LLM input text must not be empty.")
+
+        planning_required = self._prepare_request(
+            user_text
+        )
 
         conversation_parent = (
             self._previous_response_id
@@ -825,6 +920,9 @@ class JarvisAgent:
                             name=result.name,
                             success=result.success,
                             elapsed_seconds=result.elapsed_seconds,
+                            verified=result.verified,
+                            verification=result.verification,
+                            plan_progress=result.plan_progress,
                         )
                     )
 
@@ -835,6 +933,9 @@ class JarvisAgent:
                         success=result.success,
                         output=result.output,
                         elapsed_seconds=result.elapsed_seconds,
+                        verified=result.verified,
+                        verification=result.verification,
+                        plan_progress=result.plan_progress,
                     )
                 )
                 output_content = self._tool_output_content(
@@ -874,4 +975,8 @@ class JarvisAgent:
             output_tokens=output_tokens,
             total_tokens=total_tokens,
             tool_calls=tuple(tool_records),
+            planning_required=planning_required,
+            plan_snapshot=(
+                self._tool_registry.plan_snapshot()
+            ),
         )

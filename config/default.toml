@@ -33,7 +33,7 @@ max_output_tokens = 512
 timeout_seconds = 60.0
 memory = true
 tools = true
-max_tool_rounds = 4
+max_tool_rounds = 12
 vision_detail = "original"
 
 [tts]
@@ -49,6 +49,12 @@ parallel_requests = 3
 mixer_buffer = 256
 
 
+
+[planning]
+enabled = true
+max_steps = 6
+max_repair_attempts = 2
+
 [streaming]
 enabled = true
 minimum_sentence_characters = 24
@@ -62,7 +68,19 @@ max_turns = 8
 [browser]
 enabled = true
 headless = false
-profile_directory = "browser_profile"
+
+# msedge, chrome, chromium, custom
+# 기본값은 PC에 설치된 Microsoft Edge입니다.
+browser = "msedge"
+
+# browser = "custom"일 때만 사용합니다.
+# Brave/Vivaldi/Opera 등 Chromium 기반 브라우저의 exe 경로를 적습니다.
+executable_path = ""
+
+# 브라우저마다 하위 폴더가 자동 생성됩니다.
+# browser_profiles/msedge, browser_profiles/chrome 등
+profile_directory = "browser_profiles"
+
 navigation_timeout_seconds = 20.0
 action_timeout_seconds = 10.0
 max_page_text_characters = 12000

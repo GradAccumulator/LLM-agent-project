@@ -36,8 +36,10 @@ max_turns = 8
 
 
 [browser]
-enabled = true
-headless = false
+# 설치된 Microsoft Edge
+browser = "msedge"
+executable_path = ""
+profile_directory = "browser_profiles"
 
 [fast_path]
 enabled = true
@@ -54,3 +56,9 @@ minimum_rms = 0.008
 enabled = true
 minimum_sentence_characters = 24
 maximum_chunk_characters = 160
+
+
+[planning]
+enabled = true
+max_steps = 6
+max_repair_attempts = 2

@@ -22,7 +22,7 @@ def register_browser_tools(
         ToolSpec(
             name="browser_open_page",
             description=(
-                "Playwright Chromium에서 http 또는 https 페이지를 연다. "
+                "설정에서 선택한 Playwright 브라우저에서 http 또는 https 페이지를 연다. "
                 "사용자가 웹페이지 조작을 요청한 경우에 사용한다."
             ),
             parameters={
@@ -43,7 +43,7 @@ def register_browser_tools(
         ToolSpec(
             name="browser_get_page_info",
             description=(
-                "현재 Playwright 페이지의 URL과 제목을 읽고, 필요한 경우 "
+                "현재 자동화 브라우저 페이지의 URL과 제목을 읽고, 필요한 경우 "
                 "페이지 본문 텍스트도 제한된 길이로 읽는다."
             ),
             parameters={
@@ -143,7 +143,7 @@ def register_browser_tools(
         ToolSpec(
             name="browser_press_key",
             description=(
-                "현재 Playwright 페이지에 Enter, Escape, Tab, 방향키 등 "
+                "현재 자동화 브라우저 페이지에 Enter, Escape, Tab, 방향키 등 "
                 "허용된 탐색 키 하나를 보낸다."
             ),
             parameters={
@@ -175,7 +175,7 @@ def register_browser_tools(
     registry.register(
         ToolSpec(
             name="browser_go_back",
-            description="현재 Playwright 페이지에서 한 단계 뒤로 이동한다.",
+            description="현재 자동화 브라우저 페이지에서 한 단계 뒤로 이동한다.",
             parameters=_empty_parameters(),
             handler=controller.go_back,
         )
@@ -183,7 +183,7 @@ def register_browser_tools(
     registry.register(
         ToolSpec(
             name="browser_close",
-            description="Playwright가 관리하는 별도 Chromium 창을 닫는다.",
+            description="Playwright가 관리하는 선택된 브라우저 창을 닫는다.",
             parameters=_empty_parameters(),
             handler=controller.close,
         )
