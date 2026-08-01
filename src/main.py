@@ -224,23 +224,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--tts-voice",
-        default=None,
+        default="ko-KR-InJoonNeural",
         help=(
-            "Preferred Windows voice name substring. "
-            "Default: automatically prefer a Korean voice."
+            "Microsoft Edge neural voice name. "
+            "Default: ko-KR-InJoonNeural."
         ),
     )
     parser.add_argument(
         "--tts-rate",
         type=int,
         default=0,
-        help="Windows SAPI speech rate from -10 to 10. Default: 0.",
+        help="Edge TTS speech-rate percent from -100 to 100. Default: 0.",
     )
     parser.add_argument(
         "--tts-volume",
         type=int,
         default=100,
         help="Speech volume from 0 to 100. Default: 100.",
+    )
+    parser.add_argument(
+        "--tts-pitch",
+        type=int,
+        default=0,
+        help="Edge TTS pitch adjustment in Hz from -100 to 100. Default: 0.",
     )
     parser.add_argument(
         "--tts-max-characters",
@@ -352,12 +358,13 @@ def run(args: argparse.Namespace) -> int:
             )
         )
 
-        print("Loading local Windows TTS...")
+        print("Loading Microsoft Edge neural TTS...")
         synthesizer = SpeechSynthesizer(
             SpeechSynthesizerConfig(
                 voice_name=args.tts_voice,
                 rate=args.tts_rate,
                 volume=args.tts_volume,
+                pitch_hz=args.tts_pitch,
                 max_characters=args.tts_max_characters,
             )
         )
@@ -387,10 +394,12 @@ def run(args: argparse.Namespace) -> int:
         print(f"Local tools    : {tools_text}")
         print(
             f"TTS voice      : {synthesizer.selected_voice.name} "
-            f"(language={synthesizer.selected_voice.language or '?'})"
+            f"(locale={synthesizer.selected_voice.language or '?'})"
         )
-        print(f"TTS rate       : {args.tts_rate}")
+        print("TTS backend    : Microsoft Edge neural TTS (online)")
+        print(f"TTS rate       : {args.tts_rate:+d}%")
         print(f"TTS volume     : {args.tts_volume}")
+        print(f"TTS pitch      : {args.tts_pitch:+d} Hz")
         print(
             f"TTS output     : "
             f"{'enabled' if tts_enabled else 'disabled'}"
