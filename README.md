@@ -1,4 +1,4 @@
-# LLM Agent — Step 7.2: Low-Latency Voice Pipeline
+# LLM Agent — Step 7.2.1: CUDA DLL Hotfix
 
 음성 인식과 음성 출력의 체감 지연을 줄인 성능 우선 버전입니다.
 
@@ -45,6 +45,45 @@ pygame 오디오 믹서를 시작할 때 한 번만 초기화
 
 따라서 긴 답변 전체의 음성이 완성될 때까지 기다리지 않고, 먼저 생성된
 첫 부분부터 읽기 시작합니다.
+
+
+## CUDA DLL 자동 탐색 및 폴백 수정
+
+Windows에서 다음 폴더들을 자동으로 DLL 검색 경로에 등록합니다.
+
+```text
+CUDA_PATH\bin
+C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v*\bin
+C:\Program Files\NVIDIA\CUDNN\v*\bin\*
+PyTorch의 torch\lib
+```
+
+또한 CTranslate2가 모델 생성 때가 아니라 첫 추론 시 CUDA DLL을 불러오는
+경우를 처리했습니다. 기본 `--stt-device auto`에서는 GPU 워밍업이 실패해도
+프로그램이 종료되지 않고 CPU `int8`로 다시 초기화됩니다.
+
+GPU 가속을 사용하려면 Windows에 다음 DLL이 실제로 설치되어 있어야 합니다.
+
+```text
+cublas64_12.dll
+cudnn_ops64_9.dll
+```
+
+확인:
+
+```powershell
+where.exe cublas64_12.dll
+where.exe cudnn_ops64_9.dll
+```
+
+CUDA Toolkit 경로에 파일이 있지만 `where.exe`에서 찾지 못한다면 현재
+PowerShell에서 임시로 다음처럼 추가할 수 있습니다.
+
+```powershell
+$env:PATH = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\bin;$env:PATH"
+python -m src.main
+```
+
 
 ## 설치
 
@@ -119,5 +158,5 @@ Edge TTS의 음성 생성은 온라인 서비스이므로 RTX 5090 사용률을 
 ## 커밋 메시지
 
 ```bash
-git commit -m "Optimize STT and TTS for low-latency voice responses"
+git commit -m "Fix Windows CUDA DLL discovery and STT warm-up fallback"
 ```

@@ -13,6 +13,77 @@ import numpy as np
 _DLL_DIRECTORY_HANDLES: list[Any] = []
 
 
+def _register_dll_directory(path: Path) -> None:
+    if os.name != "nt" or not path.is_dir():
+        return
+
+    resolved = str(path.resolve())
+    current_path = os.environ.get("PATH", "")
+    path_entries = {
+        entry.strip().casefold()
+        for entry in current_path.split(os.pathsep)
+        if entry.strip()
+    }
+    if resolved.casefold() not in path_entries:
+        os.environ["PATH"] = resolved + os.pathsep + current_path
+
+    add_dll_directory = getattr(os, "add_dll_directory", None)
+    if callable(add_dll_directory):
+        try:
+            handle = add_dll_directory(resolved)
+        except OSError:
+            return
+        _DLL_DIRECTORY_HANDLES.append(handle)
+
+
+def _register_windows_cuda_dll_directories() -> None:
+    """Find common CUDA/cuDNN DLL folders and add them to DLL search."""
+
+    if os.name != "nt":
+        return
+
+    candidates: list[Path] = []
+
+    for name, value in os.environ.items():
+        upper_name = name.upper()
+        if (
+            upper_name == "CUDA_PATH"
+            or upper_name.startswith("CUDA_PATH_V")
+            or upper_name == "CUDNN_PATH"
+        ) and value:
+            base = Path(value)
+            candidates.extend((base, base / "bin"))
+
+    program_files = Path(
+        os.environ.get("ProgramFiles", r"C:\Program Files")
+    )
+    cuda_root = (
+        program_files
+        / "NVIDIA GPU Computing Toolkit"
+        / "CUDA"
+    )
+    if cuda_root.is_dir():
+        candidates.extend(
+            version / "bin"
+            for version in sorted(cuda_root.glob("v*"), reverse=True)
+        )
+
+    cudnn_root = program_files / "NVIDIA" / "CUDNN"
+    if cudnn_root.is_dir():
+        for version in sorted(cudnn_root.glob("v*"), reverse=True):
+            candidates.append(version / "bin")
+            candidates.extend(version.glob("bin/*"))
+
+    # Keep order while removing duplicate folders.
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        _register_dll_directory(candidate)
+
+
 @dataclass(frozen=True, slots=True)
 class SpeechRecognizerConfig:
     model_size: str = "turbo"
@@ -63,18 +134,7 @@ def _register_torch_dll_directory() -> None:
     if not torch_lib.is_dir():
         return
 
-    torch_lib_text = str(torch_lib)
-    current_path = os.environ.get("PATH", "")
-    if torch_lib_text.casefold() not in current_path.casefold():
-        os.environ["PATH"] = torch_lib_text + os.pathsep + current_path
-
-    add_dll_directory = getattr(os, "add_dll_directory", None)
-    if callable(add_dll_directory):
-        try:
-            handle = add_dll_directory(torch_lib_text)
-        except OSError:
-            return
-        _DLL_DIRECTORY_HANDLES.append(handle)
+    _register_dll_directory(torch_lib)
 
 
 def _cuda_device_available(ctranslate2: Any) -> bool:
@@ -116,6 +176,7 @@ class SpeechRecognizer:
         if config.warmup_seconds < 0:
             raise ValueError("warmup_seconds must not be negative.")
 
+        _register_windows_cuda_dll_directories()
         _register_torch_dll_directory()
 
         try:
@@ -214,21 +275,40 @@ class SpeechRecognizer:
         )
         silent_audio = np.zeros(sample_count, dtype=np.float32)
 
-        started_at = perf_counter()
-        raw_segments, _ = self._model.transcribe(
-            silent_audio,
-            language=self.config.language,
-            task="transcribe",
-            beam_size=1,
-            best_of=1,
-            temperature=0.0,
-            condition_on_previous_text=False,
-            vad_filter=False,
-            word_timestamps=False,
-            without_timestamps=True,
-        )
-        tuple(raw_segments)
-        return perf_counter() - started_at
+        def run_once() -> float:
+            started_at = perf_counter()
+            raw_segments, _ = self._model.transcribe(
+                silent_audio,
+                language=self.config.language,
+                task="transcribe",
+                beam_size=1,
+                best_of=1,
+                temperature=0.0,
+                condition_on_previous_text=False,
+                vad_filter=False,
+                word_timestamps=False,
+                without_timestamps=True,
+            )
+            tuple(raw_segments)
+            return perf_counter() - started_at
+
+        try:
+            return run_once()
+        except (OSError, RuntimeError, ValueError) as exc:
+            should_fallback = (
+                self._automatic_device
+                and self.device == "cuda"
+                and not self._used_cpu_fallback
+                and _looks_like_cuda_error(exc)
+            )
+            if not should_fallback:
+                raise RuntimeError(
+                    f"Faster-Whisper warm-up failed: {exc}"
+                ) from exc
+
+            self._switch_to_cpu(exc)
+            self._model = self._create_model()
+            return run_once()
 
     @property
     def model_name(self) -> str:
