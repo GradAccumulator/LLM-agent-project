@@ -1,5 +1,42 @@
 # LLM Agent — Step 18.2: OpenAI Hosted Web Search
 
+## Step 18.2.1 — 웹 검색 링크 본문·TTS 제거
+
+hosted web search 답변에 다음과 같은 링크 문장이 붙는 문제를 수정했습니다.
+
+```text
+([coupang.com](https://www.coupang.com/...))
+```
+
+이제 처리 순서는 다음과 같습니다.
+
+```text
+모델 답변 수신
+→ 본문의 Markdown 링크·원문 URL·숫자 citation 제거
+→ citation만 있는 문장은 통째로 제거
+→ 정리된 본문만 번호를 붙여 출력
+→ 정리된 본문만 TTS 재생
+→ 실제 출처 URL은 WEB SOURCES에만 표시
+```
+
+의미가 있는 링크 문구는 주소만 제거하고 문구를 남깁니다.
+
+```text
+[OpenAI 공식 문서](https://...)
+→ OpenAI 공식 문서
+```
+
+도메인명이나 숫자만 들어간 출처 링크는 문장 전체에서 제거됩니다.
+
+```text
+([example.com](https://...))
+[1]
+→ 제거
+```
+
+스트리밍 TTS에도 같은 필터를 적용해 마지막 citation 문장이 이미 음성 큐에
+들어가는 문제를 막았습니다.
+
 이제 최신 정보를 찾을 때 사용자의 Edge·Chrome 검색창을 열지 않고,
 **OpenAI Responses API의 hosted `web_search` 도구**를 사용합니다.
 
@@ -94,7 +131,7 @@ python -m src.main
 ## 커밋 메시지
 
 ```bash
-git commit -m "Add hosted web search without opening a browser"
+git commit -m "Remove web citations from replies and TTS"
 ```
 
 ## 다음 단계

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 import re
@@ -16,6 +16,8 @@ from src.conversation import ConversationSession
 from src.console_io import (
     ConsoleTextInput,
     print_numbered_reply,
+    sanitize_tts_chunk,
+    sanitize_web_citations,
 )
 from src.core import AgentState, AgentStateMachine, StateTransition
 from src.fastpath import LocalCommandRouter
@@ -825,6 +827,27 @@ class VoiceAssistantRuntime:
 
 
     @staticmethod
+    def _sanitize_agent_reply(reply):
+        if reply.web_search_calls <= 0:
+            return reply
+
+        cleaned = sanitize_web_citations(
+            reply.text
+        )
+        if not cleaned:
+            cleaned = (
+                "검색 결과를 확인했지만 "
+                "표시할 본문이 없습니다."
+            )
+
+        if cleaned == reply.text:
+            return reply
+        return replace(
+            reply,
+            text=cleaned,
+        )
+
+    @staticmethod
     def _print_web_sources(reply) -> None:
         if reply.web_search_calls <= 0:
             return
@@ -1106,6 +1129,9 @@ class VoiceAssistantRuntime:
             transcript_text,
             on_tool_event=self._on_tool_event,
         )
+        reply = self._sanitize_agent_reply(
+            reply
+        )
         print_numbered_reply(reply.text)
         self._log_agent_reply(reply)
         if speak_response and self.tts_enabled:
@@ -1178,7 +1204,13 @@ class VoiceAssistantRuntime:
                 return
             speech_session = start_audio_stream()
             for chunk in chunks:
-                speech_session.enqueue(chunk)
+                cleaned_chunk = sanitize_tts_chunk(
+                    chunk
+                )
+                if cleaned_chunk:
+                    speech_session.enqueue(
+                        cleaned_chunk
+                    )
 
         def on_text_delta(delta: str) -> None:
             enqueue_chunks(chunker.feed(delta))
@@ -1213,6 +1245,9 @@ class VoiceAssistantRuntime:
         )
 
         enqueue_chunks(chunker.flush())
+        reply = self._sanitize_agent_reply(
+            reply
+        )
         print_numbered_reply(reply.text)
 
         if session is not None:

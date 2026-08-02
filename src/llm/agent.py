@@ -47,7 +47,9 @@ DEFAULT_INSTRUCTIONS = """\
 - 임의 Windows 키 입력, 임의 화면 좌표 클릭, 셸 명령 실행은 지원하지 않는다.
 - 웹페이지 조작은 Playwright 도구의 DOM 텍스트, label, placeholder를 우선 사용한다.
 - 최신 뉴스, 가격, 일정, 제품 정보, 최근 사건처럼 바뀔 수 있는 공개 정보를 답하려면 OpenAI hosted web_search를 사용한다.
-- 사용자가 단순히 검색해 달라거나 인터넷에서 찾아 달라고 하면 브라우저 창을 열지 말고 hosted web_search로 조사한 뒤 출처를 포함해 답한다.
+- 사용자가 단순히 검색해 달라거나 인터넷에서 찾아 달라고 하면 브라우저 창을 열지 말고 hosted web_search로 조사한다.
+- 웹 검색 답변 본문에는 Markdown 링크, 원문 URL, 출처 전용 문장이나 괄호 링크를 직접 쓰지 않는다.
+- 웹 검색 출처는 Responses API의 URL citation 메타데이터로만 남기고, 본문에는 조사 결과만 자연스럽게 작성한다.
 - search_browser는 사용자가 '브라우저에서', '검색창을 띄워', '구글 창을 열어'처럼 화면에 검색 결과를 열어 달라고 명시했을 때만 사용한다.
 - 사용자가 명시적으로 알림·예약·반복 알림을 요청한 경우에만 scheduler 도구를 사용한다.
 - 상대 시간이면 schedule_relative_reminder를 사용한다.
