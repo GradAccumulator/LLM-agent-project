@@ -14,6 +14,7 @@ from src.fastpath import FastPathConfig, LocalCommandRouter
 from src.llm import AgentConfig, JarvisAgent
 from src.google_calendar import GoogleCalendarClient, GoogleCalendarConfig
 from src.gmail import GmailClient, GmailConfig
+from src.confirmation import ConfirmationConfig
 from src.memory import (
     LocalMemoryStore,
     MemoryStoreConfig,
@@ -292,6 +293,22 @@ def build_runtime(
         scheduler_store=scheduler_store,
         google_calendar_client=google_calendar_client,
         gmail_client=gmail_client,
+        confirmation_config=(
+            ConfirmationConfig(
+                enabled=(
+                    args.confirmation_enabled
+                ),
+                timeout_seconds=(
+                    args.confirmation_timeout
+                ),
+                high_risk_code_digits=(
+                    args.confirmation_code_digits
+                ),
+                max_code_attempts=(
+                    args.confirmation_max_attempts
+                ),
+            )
+        ),
     )
     fast_router = LocalCommandRouter(
         tool_registry,
@@ -500,6 +517,14 @@ def build_runtime(
     print(
         f"TTS output     : "
         f"{'enabled' if args.tts_enabled else 'disabled'}"
+    )
+    print(
+        f"Confirmation   : "
+        f"{'enabled' if args.confirmation_enabled else 'disabled'} "
+        f"({args.confirmation_timeout:.0f}s timeout)"
+    )
+    print(
+        "Protected demo : create_note"
     )
     print(
         f"Scheduler      : {'enabled' if args.scheduler_enabled else 'disabled'}"

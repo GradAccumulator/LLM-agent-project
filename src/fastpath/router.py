@@ -220,6 +220,33 @@ class LocalCommandRouter:
         re.IGNORECASE,
     )
 
+    _CONFIRM_APPROVE_COMMANDS = {
+        "승인",
+        "실행승인",
+        "이대로실행",
+        "이대로실행해",
+        "진행승인",
+    }
+    _CONFIRM_CANCEL_COMMANDS = {
+        "취소",
+        "실행취소",
+        "승인취소",
+        "작업취소",
+        "하지마",
+        "그작업취소해",
+    }
+    _CONFIRM_STATUS_COMMANDS = {
+        "승인대기작업",
+        "승인대기작업보여줘",
+        "대기작업보여줘",
+        "뭘승인해야돼",
+        "무슨작업대기중이야",
+    }
+    _CONFIRM_CODE_PATTERN = re.compile(
+        r"^(?:승인|실행\s*승인)\s*(\d{4,8})$",
+        re.IGNORECASE,
+    )
+
     _CLIPBOARD_WRITE_PATTERN = re.compile(
         r"^(.+?)(?:을|를)?\s*클립보드에\s*"
         r"(?:복사해줘|복사해|복사해주세요|저장해줘|저장해)$",
@@ -247,16 +274,54 @@ class LocalCommandRouter:
             json.dumps(arguments, ensure_ascii=False),
         )
         data = _payload(result)
-        if result.success:
+        if result.confirmation_required:
+            reply = (
+                data.get("message")
+                or "실행 전 확인이 필요합니다."
+            )
+        elif result.success:
             reply = success_reply(data)
         else:
-            reply = data.get("error") or "명령 실행에 실패했습니다."
+            reply = (
+                data.get("error")
+                or "명령 실행에 실패했습니다."
+            )
         return FastPathResult(
             route=route,
             success=result.success,
             reply=reply,
             elapsed_seconds=perf_counter() - started,
             tool_calls=(_call_record(result),),
+        )
+
+    def _confirmation_result(
+        self,
+        *,
+        route: str,
+        result: ToolExecutionResult,
+    ) -> FastPathResult:
+        started = perf_counter()
+        data = _payload(result)
+        reply = (
+            data.get("message")
+            if result.success
+            else data.get("error")
+        ) or (
+            "승인 작업을 처리했습니다."
+            if result.success
+            else "승인 작업 처리에 실패했습니다."
+        )
+        return FastPathResult(
+            route=route,
+            success=result.success,
+            reply=str(reply),
+            elapsed_seconds=(
+                perf_counter() - started
+                + result.elapsed_seconds
+            ),
+            tool_calls=(
+                _call_record(result),
+            ),
         )
 
     def _execute_window_state(
@@ -330,17 +395,84 @@ class LocalCommandRouter:
         if not self.config.enabled:
             return None
 
+        original = text.strip()
+        normalized = _normalize(original)
+        if not normalized:
+            return None
+
+        code_match = (
+            self._CONFIRM_CODE_PATTERN
+            .match(original)
+        )
+        if code_match is not None:
+            code = code_match.group(1)
+            return _MatchedCommand(
+                "confirmation_approve_code",
+                lambda code=code: (
+                    self._confirmation_result(
+                        route=(
+                            "confirmation_approve_code"
+                        ),
+                        result=(
+                            self.registry
+                            .approve_pending_confirmation(
+                                code=code
+                            )
+                        ),
+                    )
+                ),
+            )
+
+        if (
+            normalized
+            in self._CONFIRM_APPROVE_COMMANDS
+        ):
+            return _MatchedCommand(
+                "confirmation_approve",
+                lambda: self._confirmation_result(
+                    route="confirmation_approve",
+                    result=(
+                        self.registry
+                        .approve_pending_confirmation()
+                    ),
+                ),
+            )
+
+        if (
+            normalized
+            in self._CONFIRM_CANCEL_COMMANDS
+        ):
+            return _MatchedCommand(
+                "confirmation_cancel",
+                lambda: self._confirmation_result(
+                    route="confirmation_cancel",
+                    result=(
+                        self.registry
+                        .cancel_pending_confirmation()
+                    ),
+                ),
+            )
+
+        if (
+            normalized
+            in self._CONFIRM_STATUS_COMMANDS
+        ):
+            return _MatchedCommand(
+                "confirmation_status",
+                lambda: self._confirmation_result(
+                    route="confirmation_status",
+                    result=(
+                        self.registry
+                        .confirmation_status_result()
+                    ),
+                ),
+            )
+
         self.registry.begin_request(
             planning_required=False,
             max_steps=1,
             max_repair_attempts=0,
         )
-
-
-        original = text.strip()
-        normalized = _normalize(original)
-        if not normalized:
-            return None
 
         if normalized in self._REMINDER_LIST_COMMANDS:
             def reminder_list_reply(data: dict[str, Any]) -> str:

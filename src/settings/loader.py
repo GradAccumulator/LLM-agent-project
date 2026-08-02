@@ -175,6 +175,26 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
             "tts_mixer_buffer", int, _as_int
         ),
     },
+    "confirmation": {
+        "enabled": _SettingSpec(
+            "confirmation_enabled", bool
+        ),
+        "timeout_seconds": _SettingSpec(
+            "confirmation_timeout",
+            (int, float),
+            _as_float,
+        ),
+        "high_risk_code_digits": _SettingSpec(
+            "confirmation_code_digits",
+            int,
+            _as_int,
+        ),
+        "max_code_attempts": _SettingSpec(
+            "confirmation_max_attempts",
+            int,
+            _as_int,
+        ),
+    },
     "gmail": {
         "enabled": _SettingSpec(
             "gmail_enabled", bool

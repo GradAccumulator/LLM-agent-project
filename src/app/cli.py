@@ -356,6 +356,34 @@ def build_parser(
 
     _bool_pair(
         parser,
+        destination="confirmation_enabled",
+        positive=("--confirmation",),
+        negative=("--disable-confirmation",),
+        positive_help=(
+            "Require explicit approval for protected write tools."
+        ),
+        negative_help=(
+            "Disable the confirmation gate."
+        ),
+    )
+    parser.add_argument(
+        "--confirmation-timeout",
+        type=float,
+        default=60.0,
+    )
+    parser.add_argument(
+        "--confirmation-code-digits",
+        type=int,
+        default=4,
+    )
+    parser.add_argument(
+        "--confirmation-max-attempts",
+        type=int,
+        default=3,
+    )
+
+    _bool_pair(
+        parser,
         destination="gmail_enabled",
         positive=("--gmail",),
         negative=("--disable-gmail",),
@@ -745,6 +773,7 @@ def build_parser(
         web_search_enabled=True,
         web_search_external_access=True,
         tts_enabled=True,
+        confirmation_enabled=True,
         gmail_enabled=True,
         gmail_open_browser=True,
         google_calendar_enabled=True,

@@ -13,6 +13,7 @@ class AgentState(str, Enum):
     STARTING = 'STARTING'
     SLEEPING = 'SLEEPING'
     AWAITING_SPEECH = 'AWAITING_SPEECH'
+    AWAITING_CONFIRMATION = 'AWAITING_CONFIRMATION'
     TEXT_INPUT = 'TEXT_INPUT'
     CAPTURING = 'CAPTURING'
     TRANSCRIBING = 'TRANSCRIBING'
@@ -58,6 +59,13 @@ def _build_allowed_transitions() -> dict[AgentState, frozenset[AgentState]]:
         AgentState.AWAITING_SPEECH: {
             AgentState.CAPTURING,
             AgentState.TEXT_INPUT,
+            AgentState.AWAITING_CONFIRMATION,
+            AgentState.SLEEPING,
+        },
+        AgentState.AWAITING_CONFIRMATION: {
+            AgentState.CAPTURING,
+            AgentState.TEXT_INPUT,
+            AgentState.AWAITING_SPEECH,
             AgentState.SLEEPING,
         },
         AgentState.TEXT_INPUT: {
@@ -65,6 +73,7 @@ def _build_allowed_transitions() -> dict[AgentState, frozenset[AgentState]]:
             AgentState.EXECUTING_TOOL,
             AgentState.AWAITING_SPEECH,
             AgentState.SLEEPING,
+            AgentState.AWAITING_CONFIRMATION,
         },
         AgentState.CAPTURING: {
             AgentState.TRANSCRIBING,
@@ -76,18 +85,21 @@ def _build_allowed_transitions() -> dict[AgentState, frozenset[AgentState]]:
             AgentState.SPEAKING,
             AgentState.AWAITING_SPEECH,
             AgentState.SLEEPING,
+            AgentState.AWAITING_CONFIRMATION,
         },
         AgentState.THINKING: {
             AgentState.EXECUTING_TOOL,
             AgentState.SPEAKING,
             AgentState.AWAITING_SPEECH,
             AgentState.SLEEPING,
+            AgentState.AWAITING_CONFIRMATION,
         },
         AgentState.EXECUTING_TOOL: {
             AgentState.THINKING,
             AgentState.SPEAKING,
             AgentState.AWAITING_SPEECH,
             AgentState.SLEEPING,
+            AgentState.AWAITING_CONFIRMATION,
         },
         AgentState.SPEAKING: {
             AgentState.CAPTURING,
@@ -95,6 +107,7 @@ def _build_allowed_transitions() -> dict[AgentState, frozenset[AgentState]]:
             AgentState.EXECUTING_TOOL,
             AgentState.AWAITING_SPEECH,
             AgentState.SLEEPING,
+            AgentState.AWAITING_CONFIRMATION,
         },
         AgentState.ERROR: {AgentState.RECOVERING},
         AgentState.RECOVERING: {AgentState.SLEEPING},

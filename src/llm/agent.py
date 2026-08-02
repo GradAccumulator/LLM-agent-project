@@ -61,6 +61,9 @@ DEFAULT_INSTRUCTIONS = """\
 - Gmail 조회·검색·요약 요청에는 gmail_* 읽기 전용 도구를 사용한다.
 - 최근 메일은 Gmail 검색식 newer_than: 또는 after:를 사용하고, 읽지 않은 메일은 is:unread를 사용한다.
 - 메일 전송·회신·삭제·보관·읽음 처리·라벨 변경은 지원하지 않는다고 정확히 말한다.
+- 도구 결과에 confirmation_required=true가 있으면 작업이 아직 실행되지 않았다고 명확히 말하고 pending_action의 summary와 required_phrase를 그대로 안내한다.
+- 사용자의 다음 메시지를 승인으로 임의 해석하지 않는다. 사용자는 표시된 정확한 승인 문구를 별도 발화나 텍스트로 입력해야 한다.
+- 승인 대기 중인 작업을 이미 완료했다고 말하지 않는다.
 - 여러 메일을 요약할 때 필요한 범위만 조회하고, 본문 전체를 답변에 그대로 복사하지 말고 핵심만 요약한다.
 - 결제, 구매, 송금, 계정 삭제, 메시지 전송처럼 중요한 웹 동작은 자동 실행하지 말고 사용자 확인이 필요하다고 답한다.
 - 비밀번호, 카드, 신원 정보, 계좌 정보 입력은 브라우저 도구로 처리하지 않는다.
@@ -126,6 +129,8 @@ class ToolLifecycleEvent:
     verified: bool | None = None
     verification: dict[str, Any] | None = None
     plan_progress: dict[str, Any] | None = None
+    confirmation_required: bool = False
+    confirmation_id: str | None = None
 
 
 ToolLifecycleCallback = Callable[[ToolLifecycleEvent], None]
@@ -889,6 +894,12 @@ class JarvisAgent:
                             verified=result.verified,
                             verification=result.verification,
                             plan_progress=result.plan_progress,
+                            confirmation_required=(
+                                result.confirmation_required
+                            ),
+                            confirmation_id=(
+                                result.confirmation_id
+                            ),
                         )
                     )
 
@@ -904,6 +915,12 @@ class JarvisAgent:
                         verified=result.verified,
                         verification=result.verification,
                         plan_progress=result.plan_progress,
+                        confirmation_required=(
+                            result.confirmation_required
+                        ),
+                        confirmation_id=(
+                            result.confirmation_id
+                        ),
                     )
                 )
 
@@ -1101,6 +1118,12 @@ class JarvisAgent:
                             verified=result.verified,
                             verification=result.verification,
                             plan_progress=result.plan_progress,
+                            confirmation_required=(
+                                result.confirmation_required
+                            ),
+                            confirmation_id=(
+                                result.confirmation_id
+                            ),
                         )
                     )
 
@@ -1114,6 +1137,12 @@ class JarvisAgent:
                         verified=result.verified,
                         verification=result.verification,
                         plan_progress=result.plan_progress,
+                        confirmation_required=(
+                            result.confirmation_required
+                        ),
+                        confirmation_id=(
+                            result.confirmation_id
+                        ),
                     )
                 )
                 output_content = self._tool_output_content(

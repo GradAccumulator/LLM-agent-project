@@ -17,6 +17,11 @@ from src.browser import (
 from src.memory import LocalMemoryStore
 from src.google_calendar import GoogleCalendarClient
 from src.gmail import GmailClient
+from src.confirmation import (
+    ConfirmationConfig,
+    ConfirmationRequirement,
+    ConfirmationRisk,
+)
 from src.scheduler import SchedulerStore
 
 from .browser_tools import register_browser_tools
@@ -61,6 +66,18 @@ _SEARCH_URLS = {
     "naver": "https://search.naver.com/search.naver?query={query}",
     "youtube": "https://www.youtube.com/results?search_query={query}",
 }
+
+
+def _summarize_note_confirmation(
+    arguments: dict,
+) -> str:
+    title = str(
+        arguments.get("title") or "제목 없음"
+    ).strip()
+    return (
+        f"notes 폴더에 '{title[:80]}' "
+        "Markdown 메모 저장"
+    )
 
 
 def _empty_parameters() -> dict:
@@ -347,10 +364,16 @@ def build_default_tool_registry(
     scheduler_store: SchedulerStore | None = None,
     google_calendar_client: GoogleCalendarClient | None = None,
     gmail_client: GmailClient | None = None,
+    confirmation_config: (
+        ConfirmationConfig | None
+    ) = None,
 ) -> ToolRegistry:
     registry = ToolRegistry(
         memory_store=memory_store,
         scheduler_store=scheduler_store,
+        confirmation_config=(
+            confirmation_config
+        ),
     )
     register_planning_tools(registry)
 
@@ -569,6 +592,16 @@ def build_default_tool_registry(
                 "additionalProperties": False,
             },
             handler=create_note,
+            confirmation=(
+                ConfirmationRequirement(
+                    summary=(
+                        _summarize_note_confirmation
+                    ),
+                    risk=(
+                        ConfirmationRisk.STANDARD
+                    ),
+                )
+            ),
         )
     )
 

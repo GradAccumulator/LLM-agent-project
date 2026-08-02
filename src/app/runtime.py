@@ -243,6 +243,59 @@ class VoiceAssistantRuntime:
         self._transition(AgentState.SLEEPING, reason)
         print('\nSay "Hey Jarvis" to start a new conversation.\n')
 
+    def _await_confirmation(
+        self,
+        pending: dict,
+    ) -> None:
+        self.wakeword.reset()
+        self.microphone.clear_pending()
+        self._transition(
+            AgentState.AWAITING_CONFIRMATION,
+            "waiting for explicit approval",
+        )
+        print(
+            "\nCONFIRMATION REQUIRED "
+            f"[{pending.get('action_id')} | "
+            f"{pending.get('risk')}]"
+        )
+        print(
+            f"ACTION: {pending.get('summary')}"
+        )
+        print(
+            "APPROVE: "
+            f"{pending.get('required_phrase')}"
+        )
+        print("CANCEL : 취소")
+        print(
+            "EXPIRES: approximately "
+            f"{pending.get('remaining_seconds')}s\n"
+        )
+        self.metrics.log(
+            "confirmation_waiting",
+            data={
+                "conversation_id": (
+                    self.conversation.session_id
+                ),
+                "action_id": (
+                    pending.get("action_id")
+                ),
+                "tool": (
+                    pending.get("tool_name")
+                ),
+                "risk": pending.get("risk"),
+                "remaining_seconds": (
+                    pending.get(
+                        "remaining_seconds"
+                    )
+                ),
+            },
+            private={
+                "summary": pending.get(
+                    "summary"
+                )
+            },
+        )
+
     def _continue_conversation(self, *, reason: str) -> None:
         self.wakeword.reset()
         self.microphone.clear_pending()
@@ -402,6 +455,16 @@ class VoiceAssistantRuntime:
             self._process_capture(pending_barge_in)
             return
 
+        pending_confirmation = (
+            self.fast_router.registry
+            .pending_confirmation()
+        )
+        if pending_confirmation is not None:
+            self._await_confirmation(
+                pending_confirmation
+            )
+            return
+
         if self.conversation.can_accept_followup:
             self._continue_conversation(
                 reason="awaiting follow-up command"
@@ -555,7 +618,15 @@ class VoiceAssistantRuntime:
             if trace is not None:
                 trace.tool_count += 1
                 trace.tool_seconds += event.elapsed_seconds or 0.0
-            status = 'success' if event.success else 'failed'
+            status = (
+                "confirmation required"
+                if event.confirmation_required
+                else (
+                    "success"
+                    if event.success
+                    else "failed"
+                )
+            )
             self.metrics.log('tool_finished', data={
                 'command_id': command_id,
                 'conversation_id': self.conversation.session_id,
@@ -565,6 +636,12 @@ class VoiceAssistantRuntime:
                 'verified': event.verified,
                 'verification': event.verification,
                 'plan_progress': event.plan_progress,
+                'confirmation_required': (
+                    event.confirmation_required
+                ),
+                'confirmation_id': (
+                    event.confirmation_id
+                ),
             })
             self._transition(AgentState.THINKING, f'tool finished: {event.name} ({status})')
             return
@@ -737,6 +814,10 @@ class VoiceAssistantRuntime:
             )
             return 'local_command'
         if normalized in _SESSION_END_COMMANDS:
+            (
+                self.fast_router.registry
+                .cancel_pending_confirmation()
+            )
             self._local_reply(
                 '대화 모드를 종료합니다.',
                 speak_response=speak_response,
@@ -893,9 +974,13 @@ class VoiceAssistantRuntime:
 
         for tool_call in reply.tool_calls:
             status = (
-                "success"
-                if tool_call.success
-                else "failed"
+                "confirmation required"
+                if tool_call.confirmation_required
+                else (
+                    "success"
+                    if tool_call.success
+                    else "failed"
+                )
             )
             print(
                 f"TOOL {tool_call.name}"
@@ -923,7 +1008,10 @@ class VoiceAssistantRuntime:
                     f"{progress.get('total_steps')} "
                     f"| current={progress.get('current_step')}"
                 )
-            if not tool_call.success:
+            if (
+                not tool_call.success
+                or tool_call.confirmation_required
+            ):
                 print(tool_call.output)
 
         self._print_web_sources(reply)
@@ -979,6 +1067,10 @@ class VoiceAssistantRuntime:
                 ),
                 "total_tokens": reply.total_tokens,
                 "tool_count": len(reply.tool_calls),
+                "confirmation_requests": sum(
+                    call.confirmation_required
+                    for call in reply.tool_calls
+                ),
                 "web_search_calls": (
                     reply.web_search_calls
                 ),
@@ -1452,7 +1544,22 @@ class VoiceAssistantRuntime:
             self._process_next_text_input()
             return
         if not capture.speech_detected:
-            print('\nFOLLOW-UP: timed out. Returning to wake-word mode.')
+            pending = (
+                self.fast_router.registry
+                .pending_confirmation()
+            )
+            if pending is not None:
+                print(
+                    "\nCONFIRMATION: no response. "
+                    "The action remains pending for "
+                    f"about {pending.get('remaining_seconds')}s. "
+                    "Say Hey Jarvis and then the approval phrase, "
+                    "or type it."
+                )
+            print(
+                '\nFOLLOW-UP: timed out. '
+                'Returning to wake-word mode.'
+            )
             self._finish_command('followup_timeout')
             self._return_to_sleep(
                 reason='follow-up timeout',
@@ -1474,6 +1581,10 @@ class VoiceAssistantRuntime:
         self.synthesizer.stop()
         self.barge_in.stop(timeout=1.0)
         self._pending_barge_in_capture = None
+        (
+            self.fast_router.registry
+            .cancel_pending_confirmation()
+        )
         self._finish_command('error')
         self._end_conversation('runtime_error')
         if self.state.current is not AgentState.ERROR:

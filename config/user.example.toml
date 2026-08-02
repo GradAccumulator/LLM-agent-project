@@ -106,3 +106,10 @@ max_results = 20
 max_body_characters = 8000
 oauth_port = 0
 open_browser_for_auth = true
+
+
+[confirmation]
+enabled = true
+timeout_seconds = 60.0
+high_risk_code_digits = 4
+max_code_attempts = 3

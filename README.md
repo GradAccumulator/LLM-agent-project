@@ -1,180 +1,171 @@
-# LLM Agent — Step 19.2: Gmail Read-Only
+# LLM Agent — Step 20: Explicit Confirmation Gate
 
-Gmail을 **읽기 전용 OAuth 권한**으로 연결했습니다.
+실제 데이터를 변경하는 도구를 바로 실행하지 않고 **사용자가 별도의 승인
+문구를 말하거나 입력해야만 실행**하는 공통 승인 계층을 추가했습니다.
 
-## 가능한 명령
-
-```text
-최근 중요한 메일 5개 요약해줘
-읽지 않은 메일 몇 개야?
-오늘 온 학교 관련 메일 찾아줘
-지난 7일 동안 쿠팡에서 온 메일 보여줘
-최근 메일 중 답장이 필요해 보이는 것 정리해줘
-```
-
-추가된 도구:
+## 기본 흐름
 
 ```text
-gmail_status
-gmail_profile
-gmail_list_messages
-gmail_get_message
-gmail_unread_count
-gmail_list_labels
+사용자: 이 내용을 메모로 저장해줘
+
+Jarvis:
+실행 전 확인이 필요합니다.
+notes 폴더에 '제목' Markdown 메모 저장
+진행하려면 정확히 '승인', 취소하려면 '취소'라고 말해주세요.
+
+사용자: 승인
+→ 그때 실제 create_note 실행
+→ 결과 검증
 ```
 
-메일 전송·회신·삭제·보관·읽음 처리·라벨 변경 도구는 없습니다.
+최초 요청에 `승인해줘`가 같이 들어 있어도 그 요청 안에서는 실행되지
+않습니다. 승인은 반드시 **도구가 대기 작업을 만든 뒤의 별도 입력**이어야
+합니다.
 
-## Google Cloud 준비
+## 상태
 
-기존 Google Calendar와 같은 Google Cloud 프로젝트를 사용할 수 있습니다.
+새 상태:
 
 ```text
-Google Cloud Console
-→ Gmail API 활성화
-→ 기존 Desktop app OAuth Client 사용
+AWAITING_CONFIRMATION
 ```
 
-Calendar에서 사용한 Desktop OAuth JSON을 복사해도 됩니다.
-
-```powershell
-Copy-Item `
-  config\google_calendar_credentials.json `
-  config\gmail_credentials.json
-```
-
-또는 Google Cloud에서 같은 Desktop app의 JSON을 다시 다운로드해 다음
-경로에 둡니다.
+콘솔 예:
 
 ```text
-config/gmail_credentials.json
+CONFIRMATION REQUIRED [a1b2c3d4e5 | standard]
+ACTION: notes 폴더에 '여행 준비' Markdown 메모 저장
+APPROVE: 승인
+CANCEL : 취소
+EXPIRES: approximately 60.0s
 ```
 
-OAuth 앱이 테스트 상태라면 로그인할 Google 계정이 테스트 사용자에
-등록되어 있어야 합니다.
-
-## 설치 및 최초 인증
-
-```powershell
-python -m pip install -r requirements.txt
-python -m src.main --gmail-auth
-```
-
-요청하는 권한은 다음 하나뿐입니다.
+텍스트와 음성에서 동일하게 동작합니다.
 
 ```text
-https://www.googleapis.com/auth/gmail.readonly
+승인
+실행 승인
+이대로 실행해
+취소
+작업 취소
+승인 대기 작업 보여줘
 ```
 
-토큰은 Calendar 토큰과 분리해 저장합니다.
+`응`, `그래`, `알겠어` 같은 모호한 표현은 승인으로 처리하지 않습니다.
+
+## 위험 등급
+
+공통 API는 두 등급을 지원합니다.
 
 ```text
-data/gmail_token.json
+standard
+→ 정확한 "승인" 필요
+
+high
+→ 화면에 표시된 일회용 숫자 코드를 포함한
+  "승인 1234" 형태 필요
 ```
 
-상태 확인:
+코드를 여러 번 틀리면 대기 작업이 자동 취소됩니다.
 
-```powershell
-python -m src.main --gmail-status
-```
+## 만료와 재시작
 
-정상 출력 예:
-
-```json
-{
-  "enabled": true,
-  "authenticated": true,
-  "scope": "https://www.googleapis.com/auth/gmail.readonly"
-}
-```
-
-## 실행
-
-```powershell
-python -m src.main
-```
-
-시작 로그:
+승인 대기 작업은 기본 60초 후 만료됩니다. 대화의 12초 follow-up이 먼저
+끝나더라도 승인 시간이 남아 있다면:
 
 ```text
-Gmail          : connected (enabled)
-Gmail scope    : read-only
-Google Calendar: connected (enabled)
+Hey Jarvis
+→ 승인
 ```
 
-## Gmail 검색식
+또는 CMD에 `승인`을 입력해 실행할 수 있습니다.
 
-`gmail_list_messages`는 Gmail 검색창과 같은 검색식을 사용합니다.
+대기 작업은 메모리에만 존재하므로 프로그램을 종료하거나 오류 복구가
+발생하면 사라집니다. 재시작 뒤에 오래된 쓰기 작업이 실행되는 것을 막기
+위한 의도적인 설계입니다.
+
+## 보호되는 현재 도구
+
+Step 20에서는 기존 도구 중 실제 파일을 생성하는 다음 도구를 먼저
+보호했습니다.
 
 ```text
-is:unread
-newer_than:7d
-from:example@gmail.com
-subject:과제
-has:attachment
-category:primary
+create_note
 ```
 
-예:
+Calendar와 Gmail은 현재 읽기 전용이므로 승인 대상이 아닙니다.
 
-```text
-최근 7일 동안 읽지 않은 학교 메일 요약해줘
+향후 쓰기 도구는 `ToolSpec`에 다음처럼 정책을 선언합니다.
+
+```python
+ToolSpec(
+    name="example_write",
+    description="...",
+    parameters={...},
+    handler=handler,
+    confirmation=ConfirmationRequirement(
+        summary=summarize_action,
+        risk=ConfirmationRisk.STANDARD,
+    ),
+)
 ```
 
-내부 검색식 예:
-
-```text
-is:unread newer_than:7d (학교 OR 인하대)
-```
-
-## 본문 처리
-
-여러 메일을 조회할 때는 필요한 개수만 가져오고, 본문은 설정된 글자 수까지만
-전달합니다.
+## 설정
 
 ```toml
-[gmail]
+[confirmation]
 enabled = true
-credentials_file = "config/gmail_credentials.json"
-token_file = "data/gmail_token.json"
-user_id = "me"
-max_results = 20
-max_body_characters = 8000
-oauth_port = 0
-open_browser_for_auth = true
+timeout_seconds = 60.0
+high_risk_code_digits = 4
+max_code_attempts = 3
 ```
 
-HTML 메일은 로컬에서 일반 텍스트로 변환합니다. 긴 본문은 잘렸다는 표시와
-함께 제한됩니다.
-
-## 보안
-
-다음 파일은 `.gitignore`에 포함했습니다.
-
-```gitignore
-config/gmail_credentials.json
-data/gmail_token.json
-data/gmail_token.json.*
-```
-
-Gmail 본문은 도구 결과로 모델에 전달될 수 있으므로, 민감한 메일을 질문할
-때는 사용 중인 OpenAI API 데이터 처리 정책도 함께 고려해야 합니다.
-
-## 기능 끄기
+CLI:
 
 ```powershell
-python -m src.main --disable-gmail
+python -m src.main --confirmation-timeout 90
+python -m src.main --disable-confirmation
+```
+
+`--disable-confirmation`은 개발·테스트 용도이며 실제 사용에서는 끄지 않는
+것을 권장합니다.
+
+## 감사 로그
+
+기존 JSONL metrics에 다음 정보가 기록됩니다.
+
+```text
+confirmation_required
+confirmation_id
+confirmation_waiting
+tool execution result
+```
+
+승인 전에는 도구 handler가 호출되지 않으며, 실행 검증도 승인 후에만
+수행됩니다.
+
+## 테스트
+
+```powershell
+python -m unittest discover -s tests -v
 ```
 
 ## 커밋 메시지
 
 ```bash
-git commit -m "Add read-only Gmail OAuth integration"
+git commit -m "Add explicit confirmation gate for protected actions"
 ```
 
 ## 다음 단계
 
-다음은 **Step 20: 명시적 확인이 필요한 쓰기 작업 계층**입니다.
+다음은 **Step 20.1: 승인 후 Google Calendar 일정 생성**입니다.
 
-먼저 Calendar 일정 생성·수정부터 추가하고, 실행 전에 자비스가 변경 내용을
-읽어 준 뒤 사용자가 확인해야만 API를 호출하도록 만들 예정입니다.
+```text
+사용자: 내일 오후 3시에 병원 일정 추가해줘
+Jarvis: 이 내용으로 생성할까요? 승인 또는 취소라고 말해주세요.
+사용자: 승인
+Jarvis: 일정을 생성하고 다시 조회해 생성 결과를 검증
+```
+
+Calendar OAuth scope를 쓰기 가능한 최소 범위로 확장하며, 기존 읽기 전용
+토큰과 마이그레이션 절차도 함께 추가할 예정입니다.

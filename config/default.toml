@@ -60,6 +60,13 @@ mixer_buffer = 256
 
 
 
+
+[confirmation]
+enabled = true
+timeout_seconds = 60.0
+high_risk_code_digits = 4
+max_code_attempts = 3
+
 [gmail]
 enabled = true
 credentials_file = "config/gmail_credentials.json"
