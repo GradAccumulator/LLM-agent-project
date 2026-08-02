@@ -59,6 +59,15 @@ mixer_buffer = 256
 
 
 
+[google_calendar]
+enabled = true
+credentials_file = "config/google_calendar_credentials.json"
+token_file = "data/google_calendar_token.json"
+default_calendar_id = "primary"
+max_results = 50
+oauth_port = 0
+open_browser_for_auth = true
+
 [scheduler]
 enabled = true
 database = "data/jarvis_tasks.db"

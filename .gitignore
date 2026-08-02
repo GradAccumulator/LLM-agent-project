@@ -20,3 +20,9 @@ test-results/
 data/*.db
 data/*.db-wal
 data/*.db-shm
+
+# Google OAuth secrets/tokens
+config/google_calendar_credentials.json
+config/google_credentials.json
+data/google_calendar_token.json
+data/google_calendar_token.json.*

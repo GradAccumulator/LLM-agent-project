@@ -12,6 +12,7 @@ from src.conversation import ConversationConfig, ConversationSession
 from src.console_io import ConsoleTextInput
 from src.fastpath import FastPathConfig, LocalCommandRouter
 from src.llm import AgentConfig, JarvisAgent
+from src.google_calendar import GoogleCalendarClient, GoogleCalendarConfig
 from src.memory import (
     LocalMemoryStore,
     MemoryStoreConfig,
@@ -225,6 +226,17 @@ def build_runtime(
             args.browser_max_page_text
         ),
     )
+    google_calendar_client = GoogleCalendarClient(
+        GoogleCalendarConfig(
+            enabled=args.google_calendar_enabled,
+            credentials_file=args.google_calendar_credentials,
+            token_file=args.google_calendar_token,
+            default_calendar_id=args.google_calendar_default_id,
+            max_results=args.google_calendar_max_results,
+            oauth_port=args.google_calendar_oauth_port,
+            open_browser_for_auth=args.google_calendar_open_browser,
+        )
+    )
     scheduler_store = SchedulerStore(
         SchedulerStoreConfig(
             enabled=args.scheduler_enabled,
@@ -260,6 +272,7 @@ def build_runtime(
         browser_control_mode=args.browser_control_mode,
         memory_store=memory_store,
         scheduler_store=scheduler_store,
+        google_calendar_client=google_calendar_client,
     )
     fast_router = LocalCommandRouter(
         tool_registry,

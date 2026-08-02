@@ -175,6 +175,27 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
             "tts_mixer_buffer", int, _as_int
         ),
     },
+    "google_calendar": {
+        "enabled": _SettingSpec("google_calendar_enabled", bool),
+        "credentials_file": _SettingSpec(
+            "google_calendar_credentials", str, _as_path
+        ),
+        "token_file": _SettingSpec(
+            "google_calendar_token", str, _as_path
+        ),
+        "default_calendar_id": _SettingSpec(
+            "google_calendar_default_id", str
+        ),
+        "max_results": _SettingSpec(
+            "google_calendar_max_results", int, _as_int
+        ),
+        "oauth_port": _SettingSpec(
+            "google_calendar_oauth_port", int, _as_int
+        ),
+        "open_browser_for_auth": _SettingSpec(
+            "google_calendar_open_browser", bool
+        ),
+    },
     "scheduler": {
         "enabled": _SettingSpec("scheduler_enabled", bool),
         "database": _SettingSpec("scheduler_database", str, _as_path),
@@ -454,6 +475,7 @@ def _validate_values(values: dict[str, Any]) -> None:
         "tts_chunk_characters",
         "tts_parallel_requests",
         "tts_mixer_buffer",
+        "google_calendar_max_results",
         "scheduler_poll_interval",
         "scheduler_max_tasks",
         "scheduler_max_message_characters",

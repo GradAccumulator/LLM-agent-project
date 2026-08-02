@@ -12,3 +12,8 @@ mss>=10,<11
 edge-tts>=7.2,<8
 pygame>=2.6,<3
 playwright>=1.61,<2
+
+google-api-python-client>=2.170,<3
+google-auth>=2.40,<3
+google-auth-oauthlib>=1.2,<2
+google-auth-httplib2>=0.2,<1

@@ -62,6 +62,14 @@ def build_parser(
     )
 
     parser.add_argument(
+        "--google-calendar-auth",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--google-calendar-status",
+        action="store_true",
+    )
+    parser.add_argument(
         "--list-memories",
         action="store_true",
         help="List saved local aliases and preferences.",
@@ -334,6 +342,47 @@ def build_parser(
         "--tts-mixer-buffer",
         type=int,
         default=256,
+    )
+
+    _bool_pair(
+        parser,
+        destination="google_calendar_enabled",
+        positive=("--google-calendar",),
+        negative=("--disable-google-calendar",),
+        positive_help="Enable read-only Google Calendar.",
+        negative_help="Disable Google Calendar.",
+    )
+    parser.add_argument(
+        "--google-calendar-credentials",
+        type=Path,
+        default=Path("config/google_calendar_credentials.json"),
+    )
+    parser.add_argument(
+        "--google-calendar-token",
+        type=Path,
+        default=Path("data/google_calendar_token.json"),
+    )
+    parser.add_argument(
+        "--google-calendar-default-id",
+        default="primary",
+    )
+    parser.add_argument(
+        "--google-calendar-max-results",
+        type=int,
+        default=50,
+    )
+    parser.add_argument(
+        "--google-calendar-oauth-port",
+        type=int,
+        default=0,
+    )
+    _bool_pair(
+        parser,
+        destination="google_calendar_open_browser",
+        positive=("--google-calendar-open-browser",),
+        negative=("--google-calendar-no-browser",),
+        positive_help="Open browser for Calendar OAuth.",
+        negative_help="Do not automatically open OAuth browser.",
     )
 
     _bool_pair(
@@ -640,6 +689,8 @@ def build_parser(
         web_search_enabled=True,
         web_search_external_access=True,
         tts_enabled=True,
+        google_calendar_enabled=True,
+        google_calendar_open_browser=True,
         scheduler_enabled=True,
         scheduler_announce_tts=True,
         long_term_memory_enabled=True,

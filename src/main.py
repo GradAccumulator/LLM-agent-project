@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 
 from src.app.cli import parse_args, print_effective_config
@@ -16,6 +17,33 @@ def main() -> int:
     if args.print_config:
         print_effective_config(args, loaded)
         return 0
+
+    if args.google_calendar_auth or args.google_calendar_status:
+        from src.google_calendar import (
+            GoogleCalendarClient,
+            GoogleCalendarConfig,
+        )
+        client = GoogleCalendarClient(
+            GoogleCalendarConfig(
+                enabled=True,
+                credentials_file=args.google_calendar_credentials,
+                token_file=args.google_calendar_token,
+                default_calendar_id=args.google_calendar_default_id,
+                max_results=args.google_calendar_max_results,
+                oauth_port=args.google_calendar_oauth_port,
+                open_browser_for_auth=args.google_calendar_open_browser,
+            )
+        )
+        try:
+            result = (
+                client.authorize_interactively()
+                if args.google_calendar_auth
+                else client.status()
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        finally:
+            client.close()
 
     if args.list_browsers:
         from src.browser import format_installed_browsers

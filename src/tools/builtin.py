@@ -15,12 +15,14 @@ from src.browser import (
     SystemBrowserController,
 )
 from src.memory import LocalMemoryStore
+from src.google_calendar import GoogleCalendarClient
 from src.scheduler import SchedulerStore
 
 from .browser_tools import register_browser_tools
 from .registry import ToolRegistry, ToolSpec
 from .planning_tools import register_planning_tools
 from .memory_tools import register_memory_tools
+from .google_calendar_tools import register_google_calendar_tools
 from .scheduler_tools import register_scheduler_tools
 from .windows_desktop import (
     focus_window,
@@ -341,6 +343,7 @@ def build_default_tool_registry(
     browser_control_mode: str = "system",
     memory_store: LocalMemoryStore | None = None,
     scheduler_store: SchedulerStore | None = None,
+    google_calendar_client: GoogleCalendarClient | None = None,
 ) -> ToolRegistry:
     registry = ToolRegistry(
         memory_store=memory_store,
@@ -771,6 +774,10 @@ def build_default_tool_registry(
             handler=system_browser_controller.close_owned_window,
         )
     )
+    if google_calendar_client is not None and google_calendar_client.enabled:
+        register_google_calendar_tools(registry, google_calendar_client)
+        registry.register_closer(google_calendar_client.close)
+
     register_browser_tools(registry, browser_controller)
     registry.register_closer(browser_controller.close)
     registry.register_closer(system_browser_controller.close)
