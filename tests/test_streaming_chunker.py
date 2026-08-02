@@ -30,6 +30,10 @@ class StreamingChunkerTests(unittest.TestCase):
         )
         self.assertEqual(
             second,
+            (),
+        )
+        self.assertEqual(
+            chunker.flush(),
             ("두 번째 문장입니다.",),
         )
 

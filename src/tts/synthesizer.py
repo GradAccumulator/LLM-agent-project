@@ -12,6 +12,10 @@ from threading import Event, Lock, Thread
 from time import perf_counter, sleep
 from typing import Any
 
+from src.console_io.citations import (
+    sanitize_tts_chunk,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class SpeechSynthesizerConfig:
@@ -66,16 +70,11 @@ def clean_for_speech(
         cleaned,
         flags=re.DOTALL,
     )
-    cleaned = re.sub(
-        r'\[([^\]]+)\]\([^)]+\)',
-        r'\1',
-        cleaned,
+    cleaned = sanitize_tts_chunk(
+        cleaned
     )
-    cleaned = re.sub(
-        r'https?://\S+',
-        ' 링크 ',
-        cleaned,
-    )
+    if not cleaned:
+        return ''
     cleaned = re.sub(
         r'`([^`]+)`',
         r'\1',

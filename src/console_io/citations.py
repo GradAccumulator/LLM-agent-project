@@ -30,6 +30,36 @@ _SPACE_BEFORE_PUNCTUATION = re.compile(
     r"\s+([,.;:!?。！？])"
 )
 _MULTIPLE_SPACES = re.compile(r"[ \t]{2,}")
+
+_TTS_SCHEMELESS_DOMAIN = re.compile(
+    r"(?<![\w@])"
+    r"(?:www\.)?"
+    r"(?:[a-z0-9-]+\.)+"
+    r"[a-z]{2,}"
+    r"(?::\d+)?"
+    r"(?:/[^\s<>\]\[()]*)?",
+    flags=re.IGNORECASE,
+)
+_TTS_URL_PATH_FRAGMENT = re.compile(
+    r"(?<!\w)"
+    r"(?:/[a-z0-9._~!$&'()*+,;=:@%-]+){2,}"
+    r"(?:\?[^\s<>\]\[()]*)?",
+    flags=re.IGNORECASE,
+)
+_TTS_URL_QUERY_FRAGMENT = re.compile(
+    r"(?<!\w)"
+    r"(?:utm_[a-z_]+|ref|source|campaign|fbclid|gclid)"
+    r"=[^\s<>\]\[()]+",
+    flags=re.IGNORECASE,
+)
+_TTS_BROKEN_SCHEME = re.compile(
+    r"(?<!\w)(?:https?|www)(?=\s|$|[:./])",
+    flags=re.IGNORECASE,
+)
+_TTS_MARKDOWN_REMAINS = re.compile(
+    r"[\[\]()]"
+)
+
 _CITATION_ONLY_LABELS = {
     "source",
     "sources",
@@ -172,6 +202,46 @@ def sanitize_web_citations(
 def sanitize_tts_chunk(
     text: str,
 ) -> str:
-    """Keep URLs and citation-only lines out of spoken output."""
+    """Remove complete URLs and split streaming URL fragments from speech."""
 
-    return sanitize_web_citations(text)
+    cleaned = sanitize_web_citations(text)
+    if not cleaned:
+        return ""
+
+    cleaned = _TTS_SCHEMELESS_DOMAIN.sub(
+        "",
+        cleaned,
+    )
+    cleaned = _TTS_URL_PATH_FRAGMENT.sub(
+        "",
+        cleaned,
+    )
+    cleaned = _TTS_URL_QUERY_FRAGMENT.sub(
+        "",
+        cleaned,
+    )
+    cleaned = _TTS_BROKEN_SCHEME.sub(
+        "",
+        cleaned,
+    )
+    cleaned = _TTS_MARKDOWN_REMAINS.sub(
+        " ",
+        cleaned,
+    )
+    cleaned = _SPACE_BEFORE_PUNCTUATION.sub(
+        r"\1",
+        cleaned,
+    )
+    cleaned = _MULTIPLE_SPACES.sub(
+        " ",
+        cleaned,
+    ).strip(" \t,;:-")
+
+    if cleaned.casefold() in {
+        "링크",
+        "link",
+        "source",
+        "출처",
+    }:
+        return ""
+    return cleaned

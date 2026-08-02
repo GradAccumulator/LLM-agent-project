@@ -1,5 +1,41 @@
 # LLM Agent — Step 18.2: OpenAI Hosted Web Search
 
+## Step 18.2.2 — 스트리밍 TTS URL 완전 차단
+
+화면의 최종 답변에서는 링크가 제거됐지만 TTS가 가끔 `링크` 또는 URL 조각을
+읽는 문제를 수정했습니다.
+
+원인은 두 가지였습니다.
+
+```text
+1. 스트리밍 문장 분리기가 URL 내부의 마침표를 문장 끝으로 판단
+2. TTS 최종 정리 함수가 원문 URL을 제거하지 않고 "링크"라는 단어로 치환
+```
+
+이제 다음 보호 장치를 모두 적용합니다.
+
+```text
+LLM 스트리밍 델타
+→ URL 내부 마침표는 문장 경계로 사용하지 않음
+→ 완전한 Markdown 링크와 원문 URL 제거
+→ 분할된 도메인·경로·query 조각 제거
+→ citation 전용 조각은 TTS 큐에 넣지 않음
+→ SpeechSynthesizer 직전에도 동일 필터를 한 번 더 적용
+```
+
+차단되는 예시:
+
+```text
+https://example.com/a
+example.com/a
+/vp/products/123/items/456
+utm_source=openai
+([example.com](https://example.com))
+```
+
+TTS는 URL을 `링크`라는 단어로 바꾸지 않고 완전히 생략합니다. 실제 출처는
+기존처럼 CMD의 `WEB SOURCES`에만 표시됩니다.
+
 ## Step 18.2.1 — 웹 검색 링크 본문·TTS 제거
 
 hosted web search 답변에 다음과 같은 링크 문장이 붙는 문제를 수정했습니다.
@@ -131,7 +167,7 @@ python -m src.main
 ## 커밋 메시지
 
 ```bash
-git commit -m "Remove web citations from replies and TTS"
+git commit -m "Block URLs and citation fragments from streaming TTS"
 ```
 
 ## 다음 단계

@@ -33,6 +33,7 @@ class IncrementalSentenceChunker:
 
     _BOUNDARY_PATTERN = re.compile(
         r"[.!?。！？](?:[\"'”’)\]]*)"
+        r"(?=\s|[가-힣A-Z0-9\"“\'‘])"
     )
 
     def __init__(
