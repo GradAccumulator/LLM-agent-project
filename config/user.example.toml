@@ -95,3 +95,14 @@ default_calendar_id = "primary"
 max_results = 50
 oauth_port = 0
 open_browser_for_auth = true
+
+
+[gmail]
+enabled = true
+credentials_file = "config/gmail_credentials.json"
+token_file = "data/gmail_token.json"
+user_id = "me"
+max_results = 20
+max_body_characters = 8000
+oauth_port = 0
+open_browser_for_auth = true

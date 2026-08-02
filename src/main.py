@@ -18,6 +18,45 @@ def main() -> int:
         print_effective_config(args, loaded)
         return 0
 
+    if args.gmail_auth or args.gmail_status:
+        from src.gmail import (
+            GmailClient,
+            GmailConfig,
+        )
+
+        client = GmailClient(
+            GmailConfig(
+                enabled=True,
+                credentials_file=args.gmail_credentials,
+                token_file=args.gmail_token,
+                user_id=args.gmail_user_id,
+                max_results=args.gmail_max_results,
+                max_body_characters=(
+                    args.gmail_max_body_characters
+                ),
+                oauth_port=args.gmail_oauth_port,
+                open_browser_for_auth=(
+                    args.gmail_open_browser
+                ),
+            )
+        )
+        try:
+            result = (
+                client.authorize_interactively()
+                if args.gmail_auth
+                else client.status()
+            )
+            print(
+                json.dumps(
+                    result,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+        finally:
+            client.close()
+
     if args.google_calendar_auth or args.google_calendar_status:
         from src.google_calendar import (
             GoogleCalendarClient,

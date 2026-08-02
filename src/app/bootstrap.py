@@ -13,6 +13,7 @@ from src.console_io import ConsoleTextInput
 from src.fastpath import FastPathConfig, LocalCommandRouter
 from src.llm import AgentConfig, JarvisAgent
 from src.google_calendar import GoogleCalendarClient, GoogleCalendarConfig
+from src.gmail import GmailClient, GmailConfig
 from src.memory import (
     LocalMemoryStore,
     MemoryStoreConfig,
@@ -226,6 +227,23 @@ def build_runtime(
             args.browser_max_page_text
         ),
     )
+    gmail_client = GmailClient(
+        GmailConfig(
+            enabled=args.gmail_enabled,
+            credentials_file=args.gmail_credentials,
+            token_file=args.gmail_token,
+            user_id=args.gmail_user_id,
+            max_results=args.gmail_max_results,
+            max_body_characters=(
+                args.gmail_max_body_characters
+            ),
+            oauth_port=args.gmail_oauth_port,
+            open_browser_for_auth=(
+                args.gmail_open_browser
+            ),
+        )
+    )
+
     google_calendar_client = GoogleCalendarClient(
         GoogleCalendarConfig(
             enabled=args.google_calendar_enabled,
@@ -273,6 +291,7 @@ def build_runtime(
         memory_store=memory_store,
         scheduler_store=scheduler_store,
         google_calendar_client=google_calendar_client,
+        gmail_client=gmail_client,
     )
     fast_router = LocalCommandRouter(
         tool_registry,

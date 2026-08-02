@@ -175,6 +175,34 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
             "tts_mixer_buffer", int, _as_int
         ),
     },
+    "gmail": {
+        "enabled": _SettingSpec(
+            "gmail_enabled", bool
+        ),
+        "credentials_file": _SettingSpec(
+            "gmail_credentials", str, _as_path
+        ),
+        "token_file": _SettingSpec(
+            "gmail_token", str, _as_path
+        ),
+        "user_id": _SettingSpec(
+            "gmail_user_id", str
+        ),
+        "max_results": _SettingSpec(
+            "gmail_max_results", int, _as_int
+        ),
+        "max_body_characters": _SettingSpec(
+            "gmail_max_body_characters",
+            int,
+            _as_int,
+        ),
+        "oauth_port": _SettingSpec(
+            "gmail_oauth_port", int, _as_int
+        ),
+        "open_browser_for_auth": _SettingSpec(
+            "gmail_open_browser", bool
+        ),
+    },
     "google_calendar": {
         "enabled": _SettingSpec("google_calendar_enabled", bool),
         "credentials_file": _SettingSpec(
@@ -475,6 +503,8 @@ def _validate_values(values: dict[str, Any]) -> None:
         "tts_chunk_characters",
         "tts_parallel_requests",
         "tts_mixer_buffer",
+        "gmail_max_results",
+        "gmail_max_body_characters",
         "google_calendar_max_results",
         "scheduler_poll_interval",
         "scheduler_max_tasks",

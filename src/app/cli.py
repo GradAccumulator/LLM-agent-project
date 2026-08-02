@@ -62,6 +62,16 @@ def build_parser(
     )
 
     parser.add_argument(
+        "--gmail-auth",
+        action="store_true",
+        help="Authorize Gmail read-only access.",
+    )
+    parser.add_argument(
+        "--gmail-status",
+        action="store_true",
+        help="Show Gmail OAuth status.",
+    )
+    parser.add_argument(
         "--google-calendar-auth",
         action="store_true",
     )
@@ -342,6 +352,52 @@ def build_parser(
         "--tts-mixer-buffer",
         type=int,
         default=256,
+    )
+
+    _bool_pair(
+        parser,
+        destination="gmail_enabled",
+        positive=("--gmail",),
+        negative=("--disable-gmail",),
+        positive_help="Enable read-only Gmail tools.",
+        negative_help="Disable Gmail integration.",
+    )
+    parser.add_argument(
+        "--gmail-credentials",
+        type=Path,
+        default=Path("config/gmail_credentials.json"),
+    )
+    parser.add_argument(
+        "--gmail-token",
+        type=Path,
+        default=Path("data/gmail_token.json"),
+    )
+    parser.add_argument(
+        "--gmail-user-id",
+        default="me",
+    )
+    parser.add_argument(
+        "--gmail-max-results",
+        type=int,
+        default=20,
+    )
+    parser.add_argument(
+        "--gmail-max-body-characters",
+        type=int,
+        default=8000,
+    )
+    parser.add_argument(
+        "--gmail-oauth-port",
+        type=int,
+        default=0,
+    )
+    _bool_pair(
+        parser,
+        destination="gmail_open_browser",
+        positive=("--gmail-open-browser",),
+        negative=("--gmail-no-browser",),
+        positive_help="Open browser for Gmail OAuth.",
+        negative_help="Do not automatically open OAuth browser.",
     )
 
     _bool_pair(
@@ -689,6 +745,8 @@ def build_parser(
         web_search_enabled=True,
         web_search_external_access=True,
         tts_enabled=True,
+        gmail_enabled=True,
+        gmail_open_browser=True,
         google_calendar_enabled=True,
         google_calendar_open_browser=True,
         scheduler_enabled=True,

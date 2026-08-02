@@ -26,3 +26,9 @@ config/google_calendar_credentials.json
 config/google_credentials.json
 data/google_calendar_token.json
 data/google_calendar_token.json.*
+
+
+# Gmail OAuth secrets and tokens
+config/gmail_credentials.json
+data/gmail_token.json
+data/gmail_token.json.*
