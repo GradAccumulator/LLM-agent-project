@@ -36,6 +36,14 @@ tools = true
 max_tool_rounds = 12
 vision_detail = "original"
 
+
+[web_search]
+# OpenAI Responses API의 hosted web search입니다.
+# 브라우저 창을 열지 않고 OpenAI 서버에서 검색합니다.
+enabled = true
+external_web_access = true
+max_sources_display = 5
+
 [tts]
 enabled = true
 voice = "ko-KR-InJoonNeural"

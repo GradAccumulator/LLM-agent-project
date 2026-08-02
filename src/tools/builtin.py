@@ -517,8 +517,9 @@ def build_default_tool_registry(
         ToolSpec(
             name="search_browser",
             description=(
-                "사용자가 명시적으로 검색을 요청했을 때 Google, Naver "
-                "또는 YouTube 검색 결과를 설정에서 선택한 브라우저에서 연다."
+                "사용자가 검색 결과를 화면의 브라우저 창에 열어 달라고 "
+                "명시했을 때만 Google, Naver 또는 YouTube 검색 결과를 연다. "
+                "정보 조사나 최신 사실 확인에는 사용하지 않는다."
             ),
             parameters={
                 "type": "object",

@@ -66,7 +66,9 @@ class MemoryFastPathTests(unittest.TestCase):
                 registry.close()
                 store.close()
 
-    def test_preferred_search_engine(self) -> None:
+    def test_preferred_search_engine_does_not_hijack_generic_lookup(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = LocalMemoryStore(
                 MemoryStoreConfig(
@@ -107,12 +109,8 @@ class MemoryFastPathTests(unittest.TestCase):
                 result = router.try_execute(
                     'Faster Whisper 검색해줘'
                 )
-                self.assertIsNotNone(result)
-                self.assertTrue(result.success)
-                self.assertEqual(
-                    calls,
-                    [('google', 'Faster Whisper')],
-                )
+                self.assertIsNone(result)
+                self.assertEqual(calls, [])
             finally:
                 registry.close()
                 store.close()

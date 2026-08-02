@@ -79,3 +79,9 @@ database = "data/jarvis_tasks.db"
 poll_interval_seconds = 0.5
 announce_with_tts = true
 max_announcements_per_cycle = 3
+
+
+[web_search]
+enabled = true
+external_web_access = true
+max_sources_display = 5

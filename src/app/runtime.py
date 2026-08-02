@@ -824,6 +824,41 @@ class VoiceAssistantRuntime:
         return True
 
 
+    @staticmethod
+    def _print_web_sources(reply) -> None:
+        if reply.web_search_calls <= 0:
+            return
+
+        print(
+            "WEB SEARCH: OpenAI hosted search "
+            f"| calls={reply.web_search_calls} "
+            f"| sources={len(reply.web_sources)}"
+        )
+
+        if reply.web_search_queries:
+            print(
+                "WEB QUERIES: "
+                + " | ".join(
+                    reply.web_search_queries
+                )
+            )
+
+        if not reply.web_sources:
+            print(
+                "WEB SOURCES: no URL citations were returned."
+            )
+            return
+
+        print("WEB SOURCES:")
+        for index, source in enumerate(
+            reply.web_sources,
+            start=1,
+        ):
+            print(
+                f"  [{index}] {source.title}"
+            )
+            print(f"      {source.url}")
+
     def _log_agent_reply(self, reply) -> None:
         trace = self._active_command
         if trace is not None:
@@ -868,6 +903,8 @@ class VoiceAssistantRuntime:
             if not tool_call.success:
                 print(tool_call.output)
 
+        self._print_web_sources(reply)
+
         usage_text = format_token_usage(
             reply.input_tokens,
             reply.output_tokens,
@@ -882,7 +919,8 @@ class VoiceAssistantRuntime:
             f"first_text={first_text} | "
             f"total={reply.elapsed_seconds:.2f}s | "
             f"{usage_text} | "
-            f"tools={len(reply.tool_calls)}]"
+            f"tools={len(reply.tool_calls)} | "
+            f"web={reply.web_search_calls}]"
         )
 
         plan = reply.plan_snapshot
@@ -918,6 +956,12 @@ class VoiceAssistantRuntime:
                 ),
                 "total_tokens": reply.total_tokens,
                 "tool_count": len(reply.tool_calls),
+                "web_search_calls": (
+                    reply.web_search_calls
+                ),
+                "web_source_count": (
+                    len(reply.web_sources)
+                ),
                 "reply_characters": len(reply.text),
                 "streaming": (
                     self.config.streaming_enabled

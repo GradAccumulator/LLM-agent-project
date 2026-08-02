@@ -138,6 +138,19 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
         ),
         "vision_detail": _SettingSpec("vision_detail", str),
     },
+    "web_search": {
+        "enabled": _SettingSpec(
+            "web_search_enabled", bool
+        ),
+        "external_web_access": _SettingSpec(
+            "web_search_external_access", bool
+        ),
+        "max_sources_display": _SettingSpec(
+            "web_search_max_sources",
+            int,
+            _as_int,
+        ),
+    },
     "tts": {
         "enabled": _SettingSpec("tts_enabled", bool),
         "voice": _SettingSpec("tts_voice", str),
@@ -435,6 +448,7 @@ def _validate_values(values: dict[str, Any]) -> None:
         "llm_max_output_tokens",
         "llm_timeout",
         "llm_max_tool_rounds",
+        "web_search_max_sources",
         "tts_max_characters",
         "tts_first_chunk_characters",
         "tts_chunk_characters",

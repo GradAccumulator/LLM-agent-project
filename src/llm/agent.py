@@ -13,6 +13,12 @@ from dotenv import load_dotenv
 
 from src.memory import LocalMemoryStore
 from src.planning import should_plan_request
+from src.llm.web_search import (
+    WebSearchMetadata,
+    WebSource,
+    extract_web_search_metadata,
+    merge_web_search_metadata,
+)
 
 from src.tools import (
     ToolCallRecord,
@@ -40,6 +46,9 @@ DEFAULT_INSTRUCTIONS = """\
 - 클립보드 읽기는 민감한 내용이 있을 수 있으므로 사용자가 내용을 읽어 달라고 직접 요청한 경우에만 수행한다.
 - 임의 Windows 키 입력, 임의 화면 좌표 클릭, 셸 명령 실행은 지원하지 않는다.
 - 웹페이지 조작은 Playwright 도구의 DOM 텍스트, label, placeholder를 우선 사용한다.
+- 최신 뉴스, 가격, 일정, 제품 정보, 최근 사건처럼 바뀔 수 있는 공개 정보를 답하려면 OpenAI hosted web_search를 사용한다.
+- 사용자가 단순히 검색해 달라거나 인터넷에서 찾아 달라고 하면 브라우저 창을 열지 말고 hosted web_search로 조사한 뒤 출처를 포함해 답한다.
+- search_browser는 사용자가 '브라우저에서', '검색창을 띄워', '구글 창을 열어'처럼 화면에 검색 결과를 열어 달라고 명시했을 때만 사용한다.
 - 사용자가 명시적으로 알림·예약·반복 알림을 요청한 경우에만 scheduler 도구를 사용한다.
 - 상대 시간이면 schedule_relative_reminder를 사용한다.
 - 특정 날짜·시각 또는 반복 알림은 get_current_datetime으로 현재 로컬 시간대를 확인한 뒤 시간대 포함 ISO 8601을 사용한다.
@@ -75,6 +84,9 @@ class AgentConfig:
     long_term_memory_enabled: bool = True
     memory_context_limit: int = 20
     memory_context_characters: int = 4_000
+    web_search_enabled: bool = True
+    web_search_external_access: bool = True
+    web_search_max_sources: int = 5
     instructions: str = DEFAULT_INSTRUCTIONS
 
 
@@ -91,6 +103,9 @@ class AgentReply:
     tool_calls: tuple[ToolCallRecord, ...]
     planning_required: bool = False
     plan_snapshot: dict[str, Any] | None = None
+    web_search_calls: int = 0
+    web_search_queries: tuple[str, ...] = ()
+    web_sources: tuple[WebSource, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +182,10 @@ class JarvisAgent:
             raise ValueError(
                 "memory_context_characters must be positive."
             )
+        if config.web_search_max_sources <= 0:
+            raise ValueError(
+                "web_search_max_sources must be positive."
+            )
 
         load_dotenv()
         api_key = os.environ.get("OPENAI_API_KEY", "").strip()
@@ -199,6 +218,7 @@ class JarvisAgent:
         self._previous_response_id: str | None = None
         self._planning_required = False
         self._request_instructions = config.instructions
+        self._allow_local_browser_search = False
         self._memory_store = (
             memory_store
             if memory_store is not None
@@ -215,6 +235,68 @@ class JarvisAgent:
             return ()
         return self._tool_registry.names
 
+
+    @staticmethod
+    def _explicit_browser_search_requested(
+        user_text: str,
+    ) -> bool:
+        normalized = " ".join(
+            user_text.strip().casefold().split()
+        )
+        if not normalized:
+            return False
+
+        browser_markers = (
+            "브라우저",
+            "검색창",
+            "화면에",
+            "창을 열",
+            "창 열",
+            "띄워",
+            "엣지",
+            "edge",
+            "크롬",
+            "chrome",
+            "구글에서",
+            "네이버에서",
+            "유튜브에서",
+        )
+        return any(
+            marker in normalized
+            for marker in browser_markers
+        )
+
+    def _request_tools(self) -> list[dict[str, Any]]:
+        tools: list[dict[str, Any]] = []
+
+        if self.config.tools_enabled:
+            for schema in self._tool_registry.schemas:
+                if (
+                    schema.get("name")
+                    == "search_browser"
+                    and not self._allow_local_browser_search
+                ):
+                    continue
+                tools.append(schema)
+
+        if self.config.web_search_enabled:
+            tools.append(
+                {
+                    "type": "web_search",
+                    "external_web_access": (
+                        self.config
+                        .web_search_external_access
+                    ),
+                }
+            )
+
+        return tools
+
+    @staticmethod
+    def _merge_search_rounds(
+        rounds: list[WebSearchMetadata],
+    ) -> WebSearchMetadata:
+        return merge_web_search_metadata(rounds)
 
     @staticmethod
     def should_plan_text(
@@ -239,6 +321,11 @@ class JarvisAgent:
             ),
         )
         self._planning_required = planning_required
+        self._allow_local_browser_search = (
+            self._explicit_browser_search_requested(
+                user_text
+            )
+        )
         self._tool_registry.begin_request(
             planning_required=planning_required,
             max_steps=self.config.planning_max_steps,
@@ -469,9 +556,14 @@ class JarvisAgent:
             "store": self.config.use_memory,
         }
 
-        if self.config.tools_enabled and self._tool_registry.names:
-            request["tools"] = self._tool_registry.schemas
+        request_tools = self._request_tools()
+        if request_tools:
+            request["tools"] = request_tools
             request["tool_choice"] = "auto"
+        if self.config.web_search_enabled:
+            request["include"] = [
+                "web_search_call.action.sources"
+            ]
 
         if previous_response_id:
             request["previous_response_id"] = previous_response_id
@@ -502,12 +594,14 @@ class JarvisAgent:
             "stream": True,
         }
 
-        if (
-            self.config.tools_enabled
-            and self._tool_registry.names
-        ):
-            request["tools"] = self._tool_registry.schemas
+        request_tools = self._request_tools()
+        if request_tools:
+            request["tools"] = request_tools
             request["tool_choice"] = "auto"
+        if self.config.web_search_enabled:
+            request["include"] = [
+                "web_search_call.action.sources"
+            ]
 
         if previous_response_id:
             request["previous_response_id"] = (
@@ -672,6 +766,9 @@ class JarvisAgent:
         output_tokens: int | None = None
         total_tokens: int | None = None
         first_text_seconds: float | None = None
+        web_search_rounds: list[
+            WebSearchMetadata
+        ] = []
 
         started_at = perf_counter()
         response, round_first_text, emitted_text = (
@@ -691,6 +788,11 @@ class JarvisAgent:
         for round_index in range(
             self.config.max_tool_rounds + 1
         ):
+            web_search_rounds.append(
+                extract_web_search_metadata(
+                    response
+                )
+            )
             usage = getattr(response, "usage", None)
             input_tokens = self._add_optional(
                 input_tokens,
@@ -837,6 +939,9 @@ class JarvisAgent:
                 first_text_seconds = round_first_text
 
         elapsed_seconds = perf_counter() - started_at
+        web_metadata = self._merge_search_rounds(
+            web_search_rounds
+        )
         text = str(
             getattr(response, "output_text", "")
             or ""
@@ -875,6 +980,17 @@ class JarvisAgent:
             plan_snapshot=(
                 self._tool_registry.plan_snapshot()
             ),
+            web_search_calls=(
+                web_metadata.call_count
+            ),
+            web_search_queries=(
+                web_metadata.queries
+            ),
+            web_sources=(
+                web_metadata.sources[
+                    : self.config.web_search_max_sources
+                ]
+            ),
         )
 
     def ask(
@@ -904,6 +1020,9 @@ class JarvisAgent:
         input_tokens: int | None = None
         output_tokens: int | None = None
         total_tokens: int | None = None
+        web_search_rounds: list[
+            WebSearchMetadata
+        ] = []
 
         started_at = perf_counter()
         response = self._create_response(
@@ -912,6 +1031,11 @@ class JarvisAgent:
         )
 
         for round_index in range(self.config.max_tool_rounds + 1):
+            web_search_rounds.append(
+                extract_web_search_metadata(
+                    response
+                )
+            )
             usage = getattr(response, "usage", None)
             input_tokens = self._add_optional(
                 input_tokens,
@@ -1002,6 +1126,9 @@ class JarvisAgent:
             )
 
         elapsed_seconds = perf_counter() - started_at
+        web_metadata = self._merge_search_rounds(
+            web_search_rounds
+        )
         text = str(getattr(response, "output_text", "") or "").strip()
         if not text:
             text = "응답을 생성하지 못했습니다."
@@ -1023,5 +1150,16 @@ class JarvisAgent:
             planning_required=planning_required,
             plan_snapshot=(
                 self._tool_registry.plan_snapshot()
+            ),
+            web_search_calls=(
+                web_metadata.call_count
+            ),
+            web_search_queries=(
+                web_metadata.queries
+            ),
+            web_sources=(
+                web_metadata.sources[
+                    : self.config.web_search_max_sources
+                ]
             ),
         )

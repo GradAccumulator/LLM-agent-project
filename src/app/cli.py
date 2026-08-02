@@ -249,6 +249,36 @@ def build_parser(
         default="original",
     )
 
+    _bool_pair(
+        parser,
+        destination="web_search_enabled",
+        positive=("--web-search",),
+        negative=("--disable-web-search",),
+        positive_help=(
+            "Enable OpenAI hosted web search."
+        ),
+        negative_help=(
+            "Disable OpenAI hosted web search."
+        ),
+    )
+    _bool_pair(
+        parser,
+        destination="web_search_external_access",
+        positive=("--web-search-live",),
+        negative=("--web-search-cache-only",),
+        positive_help=(
+            "Allow live external web access."
+        ),
+        negative_help=(
+            "Use indexed/cached web results only."
+        ),
+    )
+    parser.add_argument(
+        "--web-search-max-sources",
+        type=int,
+        default=5,
+    )
+
     parser.add_argument(
         "--list-tts-voices",
         action="store_true",
@@ -607,6 +637,8 @@ def build_parser(
         stt_warmup=True,
         llm_memory=True,
         tools_enabled=True,
+        web_search_enabled=True,
+        web_search_external_access=True,
         tts_enabled=True,
         scheduler_enabled=True,
         scheduler_announce_tts=True,

@@ -669,32 +669,10 @@ class LocalCommandRouter:
                 ),
             )
 
-        generic_search = self._GENERIC_SEARCH_PATTERN.match(original)
-        if generic_search and memory_store is not None:
-            query = generic_search.group(1).strip()
-            engine = (
-                memory_store.get_preference("search_engine")
-                or memory_store.get_preference("검색 엔진")
-            )
-            if engine is not None:
-                engine = engine.strip().casefold()
-                if engine in {"google", "naver", "youtube"} and query:
-                    labels = {
-                        "google": "구글",
-                        "naver": "네이버",
-                        "youtube": "유튜브",
-                    }
-                    return _MatchedCommand(
-                        f"preferred_search:{engine}",
-                        lambda query=query, engine=engine: self._execute_one(
-                            f"preferred_search:{engine}",
-                            "search_browser",
-                            {"engine": engine, "query": query},
-                            lambda _data, query=query, engine=engine: (
-                                f"{labels[engine]}에서 {query}를 검색했습니다."
-                            ),
-                        ),
-                    )
+        # Generic "검색해줘/찾아줘" requests intentionally fall through
+        # to GPT so the hosted OpenAI web_search tool can answer without
+        # opening a browser. Explicit Google/Naver/YouTube requests above
+        # continue to open the selected browser.
 
         return None
 

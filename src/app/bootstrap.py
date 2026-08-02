@@ -309,6 +309,15 @@ def build_runtime(
             memory_context_characters=(
                 args.memory_context_characters
             ),
+            web_search_enabled=(
+                args.web_search_enabled
+            ),
+            web_search_external_access=(
+                args.web_search_external_access
+            ),
+            web_search_max_sources=(
+                args.web_search_max_sources
+            ),
         ),
         tool_registry=tool_registry,
     )
@@ -422,6 +431,14 @@ def build_runtime(
     print(
         f"Vision detail  : "
         f"{args.vision_detail}"
+    )
+    print(
+        f"Hosted search  : "
+        f"{'enabled' if args.web_search_enabled else 'disabled'}"
+    )
+    print(
+        f"Web access     : "
+        f"{'live' if args.web_search_external_access else 'cache-only'}"
     )
     print(
         f"Local tools    : {tools_text}"
