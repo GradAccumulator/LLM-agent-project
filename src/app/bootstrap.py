@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from src.audio import AudioConfig, MicrophoneStream
 from src.bargein import (
@@ -26,6 +27,7 @@ from src.memory import (
     MemoryStoreConfig,
 )
 from src.metrics import JsonlMetricsLogger, MetricsConfig
+from src.settings import LoadedSettings
 from src.scheduler import (
     ReminderScheduler,
     ReminderSchedulerConfig,
@@ -100,8 +102,36 @@ def print_tts_voices(
     return 0
 
 
+def _audio_recovery_config_path(
+    args: argparse.Namespace,
+    loaded: LoadedSettings | None,
+) -> Path | None:
+    if (
+        loaded is None
+        or not args.audio_persist_recovery
+        or getattr(
+            args,
+            "device_was_explicit",
+            False,
+        )
+    ):
+        return None
+
+    for path in reversed(
+        loaded.loaded_files
+    ):
+        if (
+            path.name.casefold()
+            == "default.toml"
+        ):
+            continue
+        return path
+    return None
+
+
 def build_runtime(
     args: argparse.Namespace,
+    loaded: LoadedSettings | None = None,
 ) -> VoiceAssistantRuntime:
     if args.save_audio:
         deleted_recordings = prune_wave_files(
@@ -119,6 +149,21 @@ def build_runtime(
             device=args.device,
             preferred_device_name=(
                 args.prefer_device
+            ),
+            allow_device_recovery=(
+                args.audio_device_recovery
+            ),
+            probe_devices_on_startup=(
+                args.audio_probe_devices
+            ),
+            persist_recovered_device=(
+                args.audio_persist_recovery
+            ),
+            recovery_config_path=(
+                _audio_recovery_config_path(
+                    args,
+                    loaded,
+                )
             ),
         )
     )
@@ -559,6 +604,16 @@ def build_runtime(
         f"Input device   : "
         f"[{microphone.device}] "
         f"{info['name']}"
+    )
+    print(
+        f"Device select  : "
+        f"{microphone.selection_reason}"
+    )
+    print(
+        f"Audio recovery : "
+        f"{'enabled' if args.audio_device_recovery else 'disabled'}"
+        f" / probe="
+        f"{'on' if args.audio_probe_devices else 'off'}"
     )
     print(
         f"Capture rate   : "

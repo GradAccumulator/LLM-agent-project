@@ -4,7 +4,6 @@ from .controller import (
     EdgeCdpError,
     StaleTabReferenceError,
 )
-
 from .launcher import (
     ManagedEdgeConfig,
     ManagedEdgeError,

@@ -1,5 +1,9 @@
 [audio]
+device = "auto"
 preferred_device = "BlackShark"
+device_recovery = true
+probe_devices = true
+persist_recovered_device = true
 start_timeout_seconds = 4.0
 end_silence_seconds = 0.4
 max_command_seconds = 15.0
@@ -96,6 +100,9 @@ startup_poll_seconds = 0.2
 startup_url = ""
 restore_last_session = true
 keep_running_on_exit = true
+
+# If 9222 belongs to a normal Edge profile, Jarvis scans the next
+# local ports and connects to the first verified/free one.
 
 [windows_uia]
 enabled = true

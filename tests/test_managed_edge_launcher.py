@@ -25,6 +25,16 @@ class _Process:
         self.terminated = True
 
 
+def _cdp(port: int) -> dict:
+    return {
+        "Browser": "Edg/142",
+        "webSocketDebuggerUrl": (
+            f"ws://127.0.0.1:{port}"
+            "/devtools/browser/a"
+        ),
+    }
+
+
 class ManagedEdgeLauncherTests(
     unittest.TestCase
 ):
@@ -40,19 +50,25 @@ class ManagedEdgeLauncherTests(
             profile = (
                 temp_path / "profile"
             )
-
-            probes = [
-                None,
-                None,
-                {
-                    "Browser": "Edg/142",
-                    "webSocketDebuggerUrl": (
-                        "ws://127.0.0.1:9222/devtools/browser/a"
-                    ),
-                },
-            ]
+            ready = {"value": False}
             commands: list[list[str]] = []
             process = _Process()
+
+            def probe(endpoint, timeout):
+                del timeout
+                if (
+                    ready["value"]
+                    and endpoint.endswith(
+                        ":9222"
+                    )
+                ):
+                    return _cdp(9222)
+                return None
+
+            def launch(command):
+                commands.append(command)
+                ready["value"] = True
+                return process
 
             launcher = ManagedEdgeLauncher(
                 ManagedEdgeConfig(
@@ -62,19 +78,10 @@ class ManagedEdgeLauncherTests(
                     startup_poll_seconds=0.1,
                 ),
                 platform="win32",
-                probe=lambda *_: (
-                    probes.pop(0)
-                    if probes
-                    else {
-                        "Browser": "Edg/142",
-                        "webSocketDebuggerUrl": "ws://ready",
-                    }
-                ),
+                probe=probe,
                 port_probe=lambda *_: False,
-                process_launcher=lambda command: (
-                    commands.append(command)
-                    or process
-                ),
+                process_launcher=launch,
+                process_inspector=lambda *_: [],
                 sleeper=lambda _: None,
             )
 
@@ -83,6 +90,12 @@ class ManagedEdgeLauncherTests(
             self.assertTrue(result["ready"])
             self.assertTrue(result["launched"])
             self.assertTrue(profile.is_dir())
+            self.assertTrue(
+                (
+                    profile
+                    / "jarvis_edge_profile.json"
+                ).is_file()
+            )
             self.assertEqual(
                 commands[0][0],
                 str(executable.resolve()),
@@ -96,37 +109,188 @@ class ManagedEdgeLauncherTests(
                 commands[0],
             )
             self.assertIn(
-                "--restore-last-session",
+                "--profile-directory=Default",
                 commands[0],
             )
 
-    def test_reuses_existing_endpoint(
+    def test_reuses_only_matching_profile(
         self,
     ) -> None:
-        launches = []
-        launcher = ManagedEdgeLauncher(
-            ManagedEdgeConfig(),
-            platform="win32",
-            probe=lambda *_: {
-                "Browser": "Edg/142",
-                "webSocketDebuggerUrl": "ws://ready",
-            },
-            process_launcher=lambda command: (
-                launches.append(command)
-            ),
-        )
+        with tempfile.TemporaryDirectory() as temp:
+            profile = (
+                Path(temp) / "profile"
+            ).resolve()
 
-        result = launcher.ensure_running()
+            launcher = ManagedEdgeLauncher(
+                ManagedEdgeConfig(
+                    profile_directory=profile,
+                ),
+                platform="win32",
+                probe=lambda endpoint, _: (
+                    _cdp(9222)
+                    if endpoint.endswith(
+                        ":9222"
+                    )
+                    else None
+                ),
+                process_inspector=lambda host, port: [
+                    {
+                        "pid": 22,
+                        "name": "msedge.exe",
+                        "exe": "C:/Edge/msedge.exe",
+                        "cmdline": [
+                            "msedge.exe",
+                            (
+                                "--remote-debugging-port="
+                                f"{port}"
+                            ),
+                            (
+                                "--user-data-dir="
+                                f"{profile}"
+                            ),
+                        ],
+                    }
+                ],
+                process_launcher=lambda _: (
+                    self.fail(
+                        "must not launch"
+                    )
+                ),
+            )
 
-        self.assertTrue(
-            result["already_running"]
-        )
-        self.assertFalse(
-            result["launched"]
-        )
-        self.assertEqual(launches, [])
+            result = launcher.ensure_running()
 
-    def test_port_collision_is_not_killed(
+            self.assertTrue(
+                result["already_running"]
+            )
+            self.assertTrue(
+                result["profile_verified"]
+            )
+            self.assertEqual(
+                result["endpoint_url"],
+                "http://127.0.0.1:9222",
+            )
+
+    def test_normal_edge_on_9222_uses_9223(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            executable = (
+                temp_path / "msedge.exe"
+            )
+            executable.write_bytes(b"edge")
+            profile = (
+                temp_path / "jarvis"
+            ).resolve()
+            normal_profile = (
+                temp_path / "normal"
+            ).resolve()
+            launched = {"value": False}
+            commands: list[list[str]] = []
+
+            def probe(endpoint, timeout):
+                del timeout
+                if endpoint.endswith(":9222"):
+                    return _cdp(9222)
+                if (
+                    endpoint.endswith(":9223")
+                    and launched["value"]
+                ):
+                    return _cdp(9223)
+                return None
+
+            def inspect(host, port):
+                del host
+                if port == 9222:
+                    return [
+                        {
+                            "pid": 10,
+                            "name": "msedge.exe",
+                            "exe": "C:/Edge/msedge.exe",
+                            "cmdline": [
+                                "msedge.exe",
+                                "--remote-debugging-port=9222",
+                                (
+                                    "--user-data-dir="
+                                    f"{normal_profile}"
+                                ),
+                            ],
+                        }
+                    ]
+                return []
+
+            def launch(command):
+                commands.append(command)
+                launched["value"] = True
+                return _Process()
+
+            launcher = ManagedEdgeLauncher(
+                ManagedEdgeConfig(
+                    executable_path=executable,
+                    profile_directory=profile,
+                ),
+                platform="win32",
+                probe=probe,
+                port_probe=lambda host, port, timeout: (
+                    port == 9222
+                ),
+                process_inspector=inspect,
+                process_launcher=launch,
+                sleeper=lambda _: None,
+            )
+
+            result = launcher.ensure_running()
+
+            self.assertTrue(result["launched"])
+            self.assertTrue(
+                result["fallback_port_used"]
+            )
+            self.assertEqual(
+                result["endpoint_url"],
+                "http://127.0.0.1:9223",
+            )
+            self.assertIn(
+                "--remote-debugging-port=9223",
+                commands[0],
+            )
+            self.assertIn(
+                f"--user-data-dir={profile}",
+                commands[0],
+            )
+
+    def test_environment_lookup_is_case_insensitive(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            program_files = Path(temp)
+            executable = (
+                program_files
+                / "Microsoft"
+                / "Edge"
+                / "Application"
+                / "msedge.exe"
+            )
+            executable.parent.mkdir(
+                parents=True
+            )
+            executable.write_bytes(b"edge")
+
+            launcher = ManagedEdgeLauncher(
+                ManagedEdgeConfig(),
+                environ={
+                    "PROGRAMFILES(X86)": (
+                        str(program_files)
+                    ),
+                },
+            )
+
+            self.assertEqual(
+                launcher.resolve_executable(),
+                executable.resolve(),
+            )
+
+    def test_no_free_port_raises_without_killing(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -140,6 +304,7 @@ class ManagedEdgeLauncherTests(
                     profile_directory=(
                         Path(temp) / "profile"
                     ),
+                    port_search_count=2,
                 ),
                 platform="win32",
                 probe=lambda *_: None,

@@ -201,6 +201,9 @@ class EdgeCdpController:
         self._last_managed_launch: (
             dict[str, Any] | None
         ) = None
+        self._active_endpoint_url = (
+            config.endpoint_url
+        )
         self._playwright: Any | None = None
         self._browser: Any | None = None
         self._selected_ref: str | None = None
@@ -270,6 +273,12 @@ class EdgeCdpController:
             raise EdgeCdpError(
                 str(exc)
             ) from exc
+        self._active_endpoint_url = str(
+            self._last_managed_launch.get(
+                "endpoint_url"
+            )
+            or self.config.endpoint_url
+        )
         return dict(
             self._last_managed_launch
         )
@@ -314,7 +323,7 @@ class EdgeCdpController:
                 self._playwright,
                 self._browser,
             ) = connector(
-                self.config.endpoint_url,
+                self._active_endpoint_url,
                 self.config.connect_timeout_seconds,
             )
         except Exception as exc:
@@ -322,7 +331,7 @@ class EdgeCdpController:
             self._browser = None
             raise EdgeCdpError(
                 "Could not connect to Microsoft Edge CDP at "
-                f"{self.config.endpoint_url}. Start Edge with "
+                f"{self._active_endpoint_url}. Start Edge with "
                 "remote debugging enabled, then retry. "
                 f"Details: {str(exc).strip() or type(exc).__name__}"
             ) from exc
@@ -478,7 +487,7 @@ class EdgeCdpController:
                 "enabled": self.enabled,
                 "connected": False,
                 "endpoint_url": (
-                    self.config.endpoint_url
+                    self._active_endpoint_url
                 ),
                 "tab_count": 0,
                 "error": str(exc),
@@ -491,7 +500,7 @@ class EdgeCdpController:
             "enabled": self.enabled,
             "connected": True,
             "endpoint_url": (
-                self.config.endpoint_url
+                self._active_endpoint_url
             ),
             "tab_count": len(pages),
             "selected_tab_ref": (
@@ -534,7 +543,7 @@ class EdgeCdpController:
 
         return {
             "endpoint_url": (
-                self.config.endpoint_url
+                self._active_endpoint_url
             ),
             "count": len(tabs),
             "tabs": tabs,

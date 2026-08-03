@@ -8,9 +8,22 @@ from typing import Sequence
 from src.settings import LoadedSettings, load_settings
 
 
-def parse_device(value: str) -> int | str:
+def parse_device(
+    value: str,
+) -> int | str | None:
     value = value.strip()
-    return int(value) if value.isdigit() else value
+    if value.casefold() in {
+        "",
+        "auto",
+        "default",
+        "none",
+    }:
+        return None
+    return (
+        int(value)
+        if value.isdigit()
+        else value
+    )
 
 
 def parse_language(value: str) -> str | None:
@@ -125,6 +138,55 @@ def build_parser(
     parser.add_argument(
         "--prefer-device",
         default="BlackShark",
+    )
+    _bool_pair(
+        parser,
+        destination="audio_device_recovery",
+        positive=(
+            "--audio-device-recovery",
+        ),
+        negative=(
+            "--disable-audio-device-recovery",
+        ),
+        positive_help=(
+            "Recover from stale or unavailable microphone indices."
+        ),
+        negative_help=(
+            "Fail instead of selecting another microphone."
+        ),
+    )
+    _bool_pair(
+        parser,
+        destination="audio_probe_devices",
+        positive=(
+            "--audio-probe-devices",
+        ),
+        negative=(
+            "--disable-audio-probe-devices",
+        ),
+        positive_help=(
+            "Open candidate microphones briefly during startup "
+            "to verify that PortAudio can use them."
+        ),
+        negative_help=(
+            "Only validate candidate settings without opening them."
+        ),
+    )
+    _bool_pair(
+        parser,
+        destination="audio_persist_recovery",
+        positive=(
+            "--persist-audio-recovery",
+        ),
+        negative=(
+            "--no-persist-audio-recovery",
+        ),
+        positive_help=(
+            "Change a stale numeric user-config device to auto."
+        ),
+        negative_help=(
+            "Recover for this run without editing the user config."
+        ),
     )
     parser.add_argument(
         "--wake-threshold",
@@ -1059,6 +1121,9 @@ def build_parser(
         edge_cdp_allow_tab_close=True,
         windows_uia_enabled=True,
         windows_uia_allow_actions=True,
+        audio_device_recovery=True,
+        audio_probe_devices=True,
+        audio_persist_recovery=True,
         confirmation_enabled=True,
         gmail_enabled=True,
         gmail_open_browser=True,
@@ -1107,9 +1172,21 @@ def parse_args(
         custom_path=preliminary.config,
         load_user=not preliminary.no_user_config,
     )
+    effective_argv = (
+        list(argv)
+        if argv is not None
+        else list(
+            __import__("sys").argv[1:]
+        )
+    )
     args = build_parser(
         loaded.argument_defaults
-    ).parse_args(argv)
+    ).parse_args(effective_argv)
+    args.device_was_explicit = any(
+        item == "--device"
+        or item.startswith("--device=")
+        for item in effective_argv
+    )
     return args, loaded
 
 
@@ -1127,6 +1204,7 @@ def print_effective_config(
         "edge_cdp_start",
         "list_memories",
         "list_tts_voices",
+        "device_was_explicit",
     }
     values = {
         key: (

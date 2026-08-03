@@ -252,7 +252,10 @@ def main() -> int:
             for path in loaded.loaded_files:
                 print(f"  - {path}")
 
-        runtime = build_runtime(args)
+        runtime = build_runtime(
+            args,
+            loaded,
+        )
         return runtime.run()
     except (
         RuntimeError,

@@ -4,6 +4,10 @@
 preferred_device = "BlackShark"
 end_silence_seconds = 0.4
 max_saved_files = 5
+device = "auto"
+device_recovery = true
+probe_devices = true
+persist_recovered_device = true
 
 [wakeword]
 threshold = 0.45

@@ -60,9 +60,30 @@ def _as_int(value: Any) -> int:
     return value
 
 
-def _as_audio_device(value: Any) -> int | str:
-    if isinstance(value, bool) or not isinstance(value, (int, str)):
-        raise ConfigError("Audio device must be an integer or string.")
+def _as_audio_device(
+    value: Any,
+) -> int | str | None:
+    if (
+        isinstance(value, bool)
+        or not isinstance(
+            value,
+            (int, str),
+        )
+    ):
+        raise ConfigError(
+            "Audio device must be an integer or string."
+        )
+    if (
+        isinstance(value, str)
+        and value.strip().casefold()
+        in {
+            "",
+            "auto",
+            "default",
+            "none",
+        }
+    ):
+        return None
     return value
 
 
@@ -72,6 +93,18 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
             "device", (int, str), _as_audio_device
         ),
         "preferred_device": _SettingSpec("prefer_device", str),
+        "device_recovery": _SettingSpec(
+            "audio_device_recovery",
+            bool,
+        ),
+        "probe_devices": _SettingSpec(
+            "audio_probe_devices",
+            bool,
+        ),
+        "persist_recovered_device": _SettingSpec(
+            "audio_persist_recovery",
+            bool,
+        ),
         "start_timeout_seconds": _SettingSpec(
             "start_timeout", (int, float), _as_float
         ),

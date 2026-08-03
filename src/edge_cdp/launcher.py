@@ -10,7 +10,7 @@ import socket
 import subprocess
 import sys
 from time import monotonic, sleep
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen
@@ -33,6 +33,8 @@ class ManagedEdgeConfig:
     startup_url: str | None = None
     restore_last_session: bool = True
     keep_running_on_exit: bool = True
+    auto_select_port: bool = True
+    port_search_count: int = 50
 
     def __post_init__(self) -> None:
         parsed = urlparse(
@@ -71,6 +73,10 @@ class ManagedEdgeConfig:
             raise ValueError(
                 "startup_poll_seconds must be between "
                 "0.05 and 5 seconds."
+            )
+        if not 1 <= self.port_search_count <= 200:
+            raise ValueError(
+                "port_search_count must be between 1 and 200."
             )
 
 
@@ -144,8 +150,145 @@ def _default_process_launcher(
     )
 
 
+def _default_process_inspector(
+    host: str,
+    port: int,
+) -> list[dict[str, Any]]:
+    del host
+    try:
+        import psutil
+    except ImportError:
+        return []
+
+    results: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    try:
+        connections = psutil.net_connections(
+            kind="tcp"
+        )
+    except Exception:
+        return []
+
+    listen_value = getattr(
+        psutil,
+        "CONN_LISTEN",
+        "LISTEN",
+    )
+    for connection in connections:
+        local = getattr(
+            connection,
+            "laddr",
+            None,
+        )
+        if not local:
+            continue
+        local_port = getattr(
+            local,
+            "port",
+            None,
+        )
+        if local_port is None:
+            try:
+                local_port = local[1]
+            except Exception:
+                continue
+        if int(local_port) != int(port):
+            continue
+
+        status = getattr(
+            connection,
+            "status",
+            None,
+        )
+        if (
+            status
+            and status != listen_value
+            and str(status).upper()
+            != "LISTEN"
+        ):
+            continue
+
+        pid = getattr(
+            connection,
+            "pid",
+            None,
+        )
+        if not pid or int(pid) in seen:
+            continue
+        seen.add(int(pid))
+
+        try:
+            process = psutil.Process(
+                int(pid)
+            )
+            results.append(
+                {
+                    "pid": int(pid),
+                    "name": process.name(),
+                    "exe": process.exe(),
+                    "cmdline": (
+                        process.cmdline()
+                        or []
+                    ),
+                }
+            )
+        except Exception:
+            results.append(
+                {
+                    "pid": int(pid),
+                    "name": None,
+                    "exe": None,
+                    "cmdline": [],
+                }
+            )
+    return results
+
+
+def _clean_cli_path(value: str) -> str:
+    return value.strip().strip(
+        "\"'"
+    )
+
+
+def _argument_value(
+    arguments: Iterable[str],
+    name: str,
+) -> str | None:
+    items = [
+        str(item)
+        for item in arguments
+    ]
+    prefix = name + "="
+    for index, item in enumerate(items):
+        if item.casefold().startswith(
+            prefix.casefold()
+        ):
+            return _clean_cli_path(
+                item[len(prefix):]
+            )
+        if (
+            item.casefold()
+            == name.casefold()
+            and index + 1 < len(items)
+        ):
+            return _clean_cli_path(
+                items[index + 1]
+            )
+    return None
+
+
+def _normalized_path(value: str | Path) -> str:
+    return str(
+        Path(value)
+        .expanduser()
+        .resolve(
+            strict=False
+        )
+    ).rstrip("\\/").casefold()
+
+
 class ManagedEdgeLauncher:
-    """Starts a persistent, isolated Edge profile for Jarvis."""
+    """Starts and verifies a dedicated Edge profile for Jarvis."""
 
     def __init__(
         self,
@@ -167,28 +310,47 @@ class ManagedEdgeLauncher:
             [list[str]],
             Any,
         ] = _default_process_launcher,
+        process_inspector: Callable[
+            [str, int],
+            list[dict[str, Any]],
+        ] = _default_process_inspector,
         sleeper: Callable[[float], None] = sleep,
         clock: Callable[[], float] = monotonic,
     ) -> None:
         self.config = config
         self._platform = platform
-        source_environ = os.environ if environ is None else environ
+
+        # Windows environment-variable names are case-insensitive.
+        # Converting os.environ to a normal dict removes that behavior,
+        # so normalize all keys before reading ProgramFiles values.
+        source_environ = (
+            os.environ
+            if environ is None
+            else environ
+        )
         self._environ = {
             str(key).casefold(): str(value)
-            for key, value in source_environ.items()
+            for key, value
+            in source_environ.items()
         }
+
         self._probe = probe
         self._port_probe = port_probe
         self._process_launcher = (
             process_launcher
         )
+        self._process_inspector = (
+            process_inspector
+        )
         self._sleeper = sleeper
         self._clock = clock
         self._process: Any | None = None
-        self._last_result: dict[
-            str,
-            Any,
-        ] | None = None
+        self._last_result: (
+            dict[str, Any] | None
+        ) = None
+        self._active_endpoint_url: (
+            str | None
+        ) = None
 
     @property
     def profile_directory(self) -> Path:
@@ -200,16 +362,76 @@ class ManagedEdgeLauncher:
         )
 
     @property
+    def preferred_endpoint_url(self) -> str:
+        return self.config.endpoint_url.rstrip(
+            "/"
+        )
+
+    @property
+    def active_endpoint_url(self) -> str:
+        return (
+            self._active_endpoint_url
+            or self.preferred_endpoint_url
+        )
+
+    @property
     def endpoint(self):
         return urlparse(
-            self.config.endpoint_url
+            self.active_endpoint_url
+        )
+
+    def _endpoint_for_port(
+        self,
+        port: int,
+    ) -> str:
+        parsed = urlparse(
+            self.preferred_endpoint_url
+        )
+        host = (
+            parsed.hostname
+            or "127.0.0.1"
+        )
+        if ":" in host and not host.startswith(
+            "["
+        ):
+            host = f"[{host}]"
+        return (
+            f"{parsed.scheme}://"
+            f"{host}:{int(port)}"
+        )
+
+    def _candidate_endpoints(
+        self,
+    ) -> tuple[str, ...]:
+        parsed = urlparse(
+            self.preferred_endpoint_url
+        )
+        preferred_port = parsed.port
+        if preferred_port is None:
+            raise ManagedEdgeError(
+                "CDP endpoint has no port."
+            )
+        count = (
+            self.config.port_search_count
+            if self.config.auto_select_port
+            else 1
+        )
+        return tuple(
+            self._endpoint_for_port(
+                preferred_port + offset
+            )
+            for offset in range(count)
         )
 
     def _probe_endpoint(
         self,
+        endpoint_url: str | None = None,
     ) -> dict[str, Any] | None:
         return self._probe(
-            self.config.endpoint_url,
+            (
+                endpoint_url
+                or self.active_endpoint_url
+            ),
             min(
                 1.0,
                 self.config
@@ -315,44 +537,376 @@ class ManagedEdgeLauncher:
             "--edge-cdp-executable."
         )
 
+    def _endpoint_processes(
+        self,
+        endpoint_url: str,
+    ) -> list[dict[str, Any]]:
+        parsed = urlparse(
+            endpoint_url
+        )
+        port = parsed.port
+        if port is None:
+            return []
+        host = (
+            parsed.hostname
+            or "127.0.0.1"
+        )
+        try:
+            return list(
+                self._process_inspector(
+                    host,
+                    int(port),
+                )
+            )
+        except Exception:
+            return []
+
+    def _ownership(
+        self,
+        endpoint_url: str,
+    ) -> dict[str, Any]:
+        expected_profile = (
+            _normalized_path(
+                self.profile_directory
+            )
+        )
+        parsed = urlparse(
+            endpoint_url
+        )
+        expected_port = parsed.port
+        processes = (
+            self._endpoint_processes(
+                endpoint_url
+            )
+        )
+
+        public_processes: list[
+            dict[str, Any]
+        ] = []
+        for process in processes:
+            arguments = [
+                str(item)
+                for item in (
+                    process.get(
+                        "cmdline"
+                    )
+                    or []
+                )
+            ]
+            profile_value = (
+                _argument_value(
+                    arguments,
+                    "--user-data-dir",
+                )
+            )
+            port_value = (
+                _argument_value(
+                    arguments,
+                    "--remote-debugging-port",
+                )
+            )
+            profile_matches = False
+            if profile_value:
+                try:
+                    profile_matches = (
+                        _normalized_path(
+                            profile_value
+                        )
+                        == expected_profile
+                    )
+                except Exception:
+                    profile_matches = False
+
+            port_matches = (
+                str(port_value)
+                == str(expected_port)
+            )
+            name = str(
+                process.get("name")
+                or ""
+            )
+            exe = str(
+                process.get("exe")
+                or ""
+            )
+            edge_process = (
+                name.casefold()
+                == "msedge.exe"
+                or Path(exe).name.casefold()
+                == "msedge.exe"
+            )
+
+            public_processes.append(
+                {
+                    "pid": process.get(
+                        "pid"
+                    ),
+                    "name": (
+                        name or None
+                    ),
+                    "profile_directory": (
+                        profile_value
+                    ),
+                    "remote_debugging_port": (
+                        port_value
+                    ),
+                    "profile_matches": (
+                        profile_matches
+                    ),
+                }
+            )
+            if (
+                edge_process
+                and profile_matches
+                and port_matches
+            ):
+                return {
+                    "managed": True,
+                    "owner_pid": process.get(
+                        "pid"
+                    ),
+                    "owner_profile_directory": (
+                        profile_value
+                    ),
+                    "processes": (
+                        public_processes
+                    ),
+                }
+
+        return {
+            "managed": False,
+            "owner_pid": None,
+            "owner_profile_directory": None,
+            "processes": public_processes,
+        }
+
+    def _discover_existing_managed(
+        self,
+    ) -> tuple[
+        str,
+        dict[str, Any],
+        dict[str, Any],
+    ] | None:
+        for endpoint_url in (
+            self._candidate_endpoints()
+        ):
+            payload = (
+                self._probe_endpoint(
+                    endpoint_url
+                )
+            )
+            if payload is None:
+                continue
+            ownership = self._ownership(
+                endpoint_url
+            )
+            if ownership["managed"]:
+                self._active_endpoint_url = (
+                    endpoint_url
+                )
+                return (
+                    endpoint_url,
+                    payload,
+                    ownership,
+                )
+        return None
+
+    def _select_launch_endpoint(
+        self,
+    ) -> tuple[
+        str,
+        list[dict[str, Any]],
+    ]:
+        conflicts: list[
+            dict[str, Any]
+        ] = []
+        for endpoint_url in (
+            self._candidate_endpoints()
+        ):
+            payload = (
+                self._probe_endpoint(
+                    endpoint_url
+                )
+            )
+            ownership = (
+                self._ownership(
+                    endpoint_url
+                )
+                if payload is not None
+                else {
+                    "managed": False,
+                    "processes": [],
+                }
+            )
+            if (
+                payload is not None
+                and ownership.get(
+                    "managed"
+                )
+            ):
+                self._active_endpoint_url = (
+                    endpoint_url
+                )
+                return (
+                    endpoint_url,
+                    conflicts,
+                )
+
+            parsed = urlparse(
+                endpoint_url
+            )
+            host = (
+                parsed.hostname
+                or "127.0.0.1"
+            )
+            port = parsed.port
+            if port is None:
+                continue
+
+            occupied = (
+                payload is not None
+                or self._port_probe(
+                    host,
+                    int(port),
+                    0.3,
+                )
+            )
+            if occupied:
+                conflicts.append(
+                    {
+                        "endpoint_url": (
+                            endpoint_url
+                        ),
+                        "cdp_detected": (
+                            payload is not None
+                        ),
+                        "managed_profile": (
+                            ownership.get(
+                                "managed",
+                                False,
+                            )
+                        ),
+                        "processes": (
+                            ownership.get(
+                                "processes",
+                                [],
+                            )
+                        ),
+                    }
+                )
+                continue
+
+            self._active_endpoint_url = (
+                endpoint_url
+            )
+            return (
+                endpoint_url,
+                conflicts,
+            )
+
+        raise ManagedEdgeError(
+            "No free local CDP port was found in "
+            f"{self.config.port_search_count} attempts "
+            f"starting at {self.preferred_endpoint_url}. "
+            "Stop the conflicting process or change "
+            "edge_cdp.endpoint_url."
+        )
+
     def command(
         self,
         executable: Path | None = None,
+        *,
+        endpoint_url: str | None = None,
     ) -> list[str]:
         executable = (
             executable
             or self.resolve_executable()
         )
-        port = self.endpoint.port
+        selected_endpoint = (
+            endpoint_url
+            or self.active_endpoint_url
+        )
+        parsed = urlparse(
+            selected_endpoint
+        )
+        port = parsed.port
         if port is None:
             raise ManagedEdgeError(
                 "CDP endpoint has no port."
             )
 
         profile = self.profile_directory
-        command = [
+        return [
             str(executable),
-            f"--remote-debugging-port={port}",
-            f"--user-data-dir={profile}",
+            (
+                "--remote-debugging-address="
+                "127.0.0.1"
+            ),
+            (
+                "--remote-debugging-port="
+                f"{port}"
+            ),
+            (
+                "--user-data-dir="
+                f"{profile}"
+            ),
+            "--profile-directory=Default",
+            "--new-window",
             "--no-first-run",
             "--no-default-browser-check",
+            *(
+                ["--restore-last-session"]
+                if (
+                    self.config
+                    .restore_last_session
+                )
+                else []
+            ),
+            *(
+                [
+                    self.config
+                    .startup_url
+                    .strip()
+                ]
+                if (
+                    self.config
+                    .startup_url
+                    and self.config
+                    .startup_url
+                    .strip()
+                )
+                else []
+            ),
         ]
-        if self.config.restore_last_session:
-            command.append(
-                "--restore-last-session"
-            )
-        startup_url = (
-            self.config.startup_url
-            or ""
-        ).strip()
-        if startup_url:
-            command.append(startup_url)
-        return command
 
     def _metadata_path(self) -> Path:
         return (
             self.profile_directory
             / "jarvis_edge_launch.json"
+        )
+
+    def _marker_path(self) -> Path:
+        return (
+            self.profile_directory
+            / "jarvis_edge_profile.json"
+        )
+
+    def _write_marker(self) -> None:
+        payload = {
+            "managed_by": (
+                "LLM-agent-project"
+            ),
+            "profile_directory": str(
+                self.profile_directory
+            ),
+        }
+        self._marker_path().write_text(
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
         )
 
     def _write_metadata(
@@ -361,6 +915,7 @@ class ManagedEdgeLauncher:
         executable: Path,
         command: list[str],
         pid: int | None,
+        endpoint_url: str,
     ) -> None:
         payload = {
             "started_at": (
@@ -376,9 +931,10 @@ class ManagedEdgeLauncher:
             "profile_directory": str(
                 self.profile_directory
             ),
-            "endpoint_url": (
-                self.config.endpoint_url
+            "preferred_endpoint_url": (
+                self.preferred_endpoint_url
             ),
+            "endpoint_url": endpoint_url,
             "pid": pid,
             "command": command,
         }
@@ -395,8 +951,111 @@ class ManagedEdgeLauncher:
         except OSError:
             pass
 
+    def _own_process_is_running(self) -> bool:
+        if self._process is None:
+            return False
+        try:
+            return self._process.poll() is None
+        except Exception:
+            return False
+
+    def _reuse_current_process(
+        self,
+    ) -> dict[str, Any] | None:
+        if not self._own_process_is_running():
+            return None
+        payload = self._probe_endpoint(
+            self.active_endpoint_url
+        )
+        if payload is None:
+            return None
+        return {
+            "ready": True,
+            "launched": False,
+            "already_running": True,
+            "browser": payload.get("Browser"),
+            "preferred_endpoint_url": (
+                self.preferred_endpoint_url
+            ),
+            "endpoint_url": (
+                self.active_endpoint_url
+            ),
+            "fallback_port_used": (
+                self.active_endpoint_url
+                != self.preferred_endpoint_url
+            ),
+            "profile_directory": str(
+                self.profile_directory
+            ),
+            "profile_verified": True,
+            "owner_pid": getattr(
+                self._process,
+                "pid",
+                None,
+            ),
+            "launcher_pid": getattr(
+                self._process,
+                "pid",
+                None,
+            ),
+            "message": (
+                "현재 Jarvis 프로세스가 시작한 "
+                "전용 Edge 세션을 재사용했습니다."
+            ),
+        }
+
     def status(self) -> dict[str, Any]:
-        payload = self._probe_endpoint()
+        own_process = (
+            self._reuse_current_process()
+        )
+        if own_process is not None:
+            endpoint_url = str(
+                own_process["endpoint_url"]
+            )
+            payload = {
+                "Browser": own_process.get(
+                    "browser"
+                )
+            }
+            ownership = {
+                "managed": True,
+                "owner_pid": (
+                    own_process.get(
+                        "owner_pid"
+                    )
+                ),
+                "processes": [],
+            }
+        else:
+            discovered = (
+                self._discover_existing_managed()
+            )
+            if discovered is not None:
+                (
+                    endpoint_url,
+                    payload,
+                    ownership,
+                ) = discovered
+            else:
+                endpoint_url = (
+                    self.active_endpoint_url
+                )
+                payload = (
+                    self._probe_endpoint(
+                        endpoint_url
+                    )
+                )
+                ownership = (
+                    self._ownership(
+                        endpoint_url
+                    )
+                    if payload is not None
+                    else {
+                        "managed": False,
+                        "processes": [],
+                    }
+                )
+
         executable: str | None = None
         executable_error: str | None = None
         try:
@@ -419,17 +1078,31 @@ class ManagedEdgeLauncher:
         return {
             "managed": True,
             "platform": self._platform,
-            "ready": payload is not None,
+            "ready": (
+                payload is not None
+                and ownership.get(
+                    "managed",
+                    False,
+                )
+            ),
             "browser": (
                 payload.get("Browser")
                 if payload
                 else None
             ),
-            "endpoint_url": (
-                self.config.endpoint_url
+            "preferred_endpoint_url": (
+                self.preferred_endpoint_url
             ),
-            "auto_start": (
-                self.config.auto_start
+            "endpoint_url": endpoint_url,
+            "fallback_port_used": (
+                endpoint_url
+                != self.preferred_endpoint_url
+            ),
+            "profile_verified": (
+                ownership.get(
+                    "managed",
+                    False,
+                )
             ),
             "profile_directory": str(
                 self.profile_directory
@@ -437,6 +1110,27 @@ class ManagedEdgeLauncher:
             "profile_exists": (
                 self.profile_directory
                 .is_dir()
+            ),
+            "profile_marker_exists": (
+                self._marker_path()
+                .is_file()
+            ),
+            "owner_pid": (
+                ownership.get(
+                    "owner_pid"
+                )
+            ),
+            "detected_processes": (
+                ownership.get(
+                    "processes",
+                    []
+                )
+            ),
+            "auto_start": (
+                self.config.auto_start
+            ),
+            "auto_select_port": (
+                self.config.auto_select_port
             ),
             "executable_path": executable,
             "executable_error": (
@@ -466,20 +1160,47 @@ class ManagedEdgeLauncher:
     def ensure_running(
         self,
     ) -> dict[str, Any]:
-        existing = self._probe_endpoint()
-        if existing is not None:
+        own_process = (
+            self._reuse_current_process()
+        )
+        if own_process is not None:
+            self._last_result = own_process
+            return own_process
+
+        discovered = (
+            self._discover_existing_managed()
+        )
+        if discovered is not None:
+            (
+                endpoint_url,
+                payload,
+                ownership,
+            ) = discovered
             result = {
                 "ready": True,
                 "launched": False,
                 "already_running": True,
-                "browser": existing.get(
+                "browser": payload.get(
                     "Browser"
                 ),
+                "preferred_endpoint_url": (
+                    self.preferred_endpoint_url
+                ),
                 "endpoint_url": (
-                    self.config.endpoint_url
+                    endpoint_url
+                ),
+                "fallback_port_used": (
+                    endpoint_url
+                    != self.preferred_endpoint_url
                 ),
                 "profile_directory": str(
                     self.profile_directory
+                ),
+                "profile_verified": True,
+                "owner_pid": (
+                    ownership.get(
+                        "owner_pid"
+                    )
                 ),
                 "launcher_pid": getattr(
                     self._process,
@@ -487,8 +1208,9 @@ class ManagedEdgeLauncher:
                     None,
                 ),
                 "message": (
-                    "Jarvis 전용 Edge가 이미 "
-                    "CDP 연결 대기 중입니다."
+                    "Jarvis 전용 Edge 프로필을 "
+                    "확인하고 기존 CDP 세션을 "
+                    "재사용했습니다."
                 ),
             }
             self._last_result = result
@@ -500,28 +1222,32 @@ class ManagedEdgeLauncher:
                 "is available on Windows only."
             )
 
-        host = (
-            self.endpoint.hostname
-            or "127.0.0.1"
-        )
-        port = self.endpoint.port
-        if port is None:
-            raise ManagedEdgeError(
-                "CDP endpoint has no port."
-            )
+        (
+            endpoint_url,
+            conflicts,
+        ) = self._select_launch_endpoint()
 
-        if self._port_probe(
-            host,
-            port,
-            0.3,
-        ):
-            raise ManagedEdgeError(
-                f"Port {port} is already occupied, "
-                "but it is not exposing a compatible "
-                "Edge CDP /json/version endpoint. "
-                "Change edge_cdp.endpoint_url or stop "
-                "the conflicting process."
+        # _select_launch_endpoint can discover a managed instance
+        # while scanning, so reuse it instead of launching again.
+        payload = self._probe_endpoint(
+            endpoint_url
+        )
+        ownership = (
+            self._ownership(
+                endpoint_url
             )
+            if payload is not None
+            else {
+                "managed": False,
+            }
+        )
+        if (
+            payload is not None
+            and ownership.get(
+                "managed"
+            )
+        ):
+            return self.ensure_running()
 
         executable = (
             self.resolve_executable()
@@ -531,8 +1257,10 @@ class ManagedEdgeLauncher:
             parents=True,
             exist_ok=True,
         )
+        self._write_marker()
         command = self.command(
-            executable
+            executable,
+            endpoint_url=endpoint_url,
         )
 
         try:
@@ -556,6 +1284,7 @@ class ManagedEdgeLauncher:
             executable=executable,
             command=command,
             pid=pid,
+            endpoint_url=endpoint_url,
         )
 
         deadline = (
@@ -565,7 +1294,9 @@ class ManagedEdgeLauncher:
         )
         payload = None
         while self._clock() < deadline:
-            payload = self._probe_endpoint()
+            payload = self._probe_endpoint(
+                endpoint_url
+            )
             if payload is not None:
                 break
 
@@ -596,6 +1327,16 @@ class ManagedEdgeLauncher:
                 "security software is not blocking the port."
             )
 
+        ownership = self._ownership(
+            endpoint_url
+        )
+        # A newly launched process is still trusted when Windows
+        # temporarily withholds command-line inspection. Blind reuse
+        # is the dangerous path; new launches always contain the
+        # dedicated --user-data-dir in `command`.
+        profile_verified = bool(
+            ownership.get("managed")
+        )
         result = {
             "ready": True,
             "launched": True,
@@ -603,11 +1344,24 @@ class ManagedEdgeLauncher:
             "browser": payload.get(
                 "Browser"
             ),
-            "endpoint_url": (
-                self.config.endpoint_url
+            "preferred_endpoint_url": (
+                self.preferred_endpoint_url
+            ),
+            "endpoint_url": endpoint_url,
+            "fallback_port_used": (
+                endpoint_url
+                != self.preferred_endpoint_url
             ),
             "profile_directory": str(
                 profile
+            ),
+            "profile_verified": (
+                profile_verified
+            ),
+            "owner_pid": (
+                ownership.get(
+                    "owner_pid"
+                )
             ),
             "executable_path": str(
                 executable
@@ -621,6 +1375,8 @@ class ManagedEdgeLauncher:
                 self.config
                 .keep_running_on_exit
             ),
+            "port_conflicts": conflicts,
+            "command": command,
             "message": (
                 "Jarvis 전용 Edge 프로필을 "
                 "remote debugging이 활성화된 "

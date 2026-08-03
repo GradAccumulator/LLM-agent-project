@@ -18,11 +18,17 @@ class _Managed:
         return {
             "ready": True,
             "launched": True,
+            "endpoint_url": (
+                "http://127.0.0.1:9223"
+            ),
         }
 
     def status(self):
         return {
             "ready": True,
+            "endpoint_url": (
+                "http://127.0.0.1:9223"
+            ),
         }
 
     def close(self):
@@ -44,19 +50,26 @@ class _Playwright:
 class EdgeCdpAutoStartTests(
     unittest.TestCase
 ):
-    def test_explicit_managed_launcher_runs_before_attach(
+    def test_selected_fallback_endpoint_is_used_for_attach(
         self,
     ) -> None:
         managed = _Managed()
+        endpoints: list[str] = []
+
+        def connector(endpoint, timeout):
+            del timeout
+            endpoints.append(endpoint)
+            return (
+                _Playwright(),
+                _Browser(),
+            )
+
         controller = EdgeCdpController(
             EdgeCdpConfig(
                 auto_start=True
             ),
             managed_launcher=managed,
-            connector=lambda *_: (
-                _Playwright(),
-                _Browser(),
-            ),
+            connector=connector,
         )
 
         status = controller.status()
@@ -67,6 +80,16 @@ class EdgeCdpAutoStartTests(
         self.assertEqual(
             managed.starts,
             1,
+        )
+        self.assertEqual(
+            endpoints,
+            [
+                "http://127.0.0.1:9223"
+            ],
+        )
+        self.assertEqual(
+            status["endpoint_url"],
+            "http://127.0.0.1:9223",
         )
         controller.close()
         self.assertEqual(
