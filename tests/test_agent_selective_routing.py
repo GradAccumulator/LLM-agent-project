@@ -100,7 +100,7 @@ class AgentSelectiveRoutingTests(unittest.TestCase):
         self.assertTrue(payload["judgment_only"])
         self.assertEqual(
             payload["model"],
-            "gpt-5.6-sol",
+            "gpt-5-pro",
         )
 
 

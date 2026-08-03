@@ -273,6 +273,21 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
             (int, float),
             _as_float,
         ),
+        "element_ref_ttl_seconds": _SettingSpec(
+            "edge_cdp_element_ttl",
+            (int, float),
+            _as_float,
+        ),
+        "max_elements": _SettingSpec(
+            "edge_cdp_max_elements",
+            int,
+            _as_int,
+        ),
+        "max_fill_characters": _SettingSpec(
+            "edge_cdp_max_fill_characters",
+            int,
+            _as_int,
+        ),
         "screenshot_directory": _SettingSpec(
             "edge_cdp_screenshot_dir",
             str,
@@ -280,6 +295,10 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
         ),
         "allow_tab_close": _SettingSpec(
             "edge_cdp_allow_tab_close",
+            bool,
+        ),
+        "allow_dom_actions": _SettingSpec(
+            "edge_cdp_allow_dom_actions",
             bool,
         ),
         "auto_start": _SettingSpec(

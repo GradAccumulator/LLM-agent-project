@@ -1,73 +1,144 @@
-# LLM Agent — Step 22.3.4: WDM-KS Callback Probe Fix
+# LLM Agent — Step 23.1–23.4: Computer Agent V2 Foundation
 
-BlackShark V3 Pro 마이크가 장치 목록에 정상적으로 존재하고
-`check_input_settings()`도 통과하지만 다음 오류로 자동 검사에서 탈락하던
-문제를 수정했습니다.
+이번 묶음은 다음 네 가지를 함께 구현합니다.
 
 ```text
-Blocking API not supported yet
-Windows WDM-KS error -9999
+Step 23.1  OpenAI 모델 ID 핫픽스
+Step 23.2  Edge DOM element_ref
+Step 23.3  안전한 링크·버튼 클릭과 일반 텍스트 초안 입력
+Step 23.4  실행 후 URL·제목·요소 상태·입력값 검증
 ```
 
-## 원인
+## 1. 모델 ID 핫픽스
 
-`sounddevice.InputStream`에 callback을 전달하지 않으면 PortAudio의
-blocking read/write 모드로 열립니다.
-
-이전 자동 검사:
-
-```python
-sd.InputStream(
-    device=device,
-    samplerate=48000,
-    channels=1,
-    dtype="int16",
-)
-```
-
-사용자의 BlackShark WDM-KS 장치는 callback 스트림은 사용할 수 있지만
-blocking API는 지원하지 않아, 실제 Jarvis에서 사용할 수 있는 마이크가
-검사 단계에서 잘못 제외됐습니다.
-
-실제 Jarvis 런타임은 원래 callback 기반입니다. 따라서 자동 검사도
-런타임과 동일하게 수정했습니다.
-
-```python
-sd.InputStream(
-    device=device,
-    samplerate=48000,
-    channels=1,
-    dtype="int16",
-    blocksize=3840,
-    callback=probe_callback,
-)
-```
-
-## 적용 후 흐름
+기존 기본값이었던 아래 ID는 실제 OpenAI API 모델 ID가 아닙니다.
 
 ```text
-장치 18 확인
-→ check_input_settings
-→ callback 방식 InputStream 생성
-→ start / stop / close
-→ 성공하면 BlackShark WDM-KS 선택
-→ 실제 Jarvis도 callback 방식으로 시작
+gpt-5.6-luna
+gpt-5.6-terra
+gpt-5.6-sol
 ```
 
-예상 로그:
+새 기본값:
+
+```toml
+[llm]
+model = "gpt-5.1"
+reasoning = "low"
+
+[model_routing]
+balanced_model = "gpt-5.1"
+balanced_reasoning = "high"
+strong_model = "gpt-5-pro"
+strong_reasoning = "high"
+```
+
+기존 `config/user.toml`에 예전 ID가 남아 있어도 시작 시 메모리에서 자동
+변환합니다.
 
 ```text
-Input device   : [18] 마이크 (BlackShark V3 Pro - Chat)
-Device select  : requested device
-Audio recovery : enabled / probe=callback
+Model migration : gpt-5.6-luna -> gpt-5.1
+Model migration : gpt-5.6-terra -> gpt-5.1
+Model migration : gpt-5.6-sol -> gpt-5-pro
+Model migration : xhigh -> high for gpt-5-pro
 ```
 
-숫자 장치가 실제로 바뀌었을 때는 이전 단계의 이름 기반 자동 복구도 그대로
-유지됩니다.
+`gpt-5-pro` 호출 권한이 없는 계정에서는 기존 `fallback_to_default=true`
+정책에 따라 위임 실패를 숨기지 않고 기본 모델로 계속 답합니다.
+
+## 2. Edge DOM 참조
+
+새 도구:
+
+```text
+edge_cdp_list_elements
+edge_cdp_get_element
+edge_cdp_click_element
+edge_cdp_fill_element
+```
+
+요소 조회 예:
+
+```text
+현재 Edge 페이지 링크 목록 알려줘
+현재 페이지에서 '문서 보기' 링크 눌러줘
+메모 입력창에 '회의 내용 확인'이라고 적어줘
+```
+
+요소는 다음과 같은 짧은 참조로 반환됩니다.
+
+```text
+edge_el_a1b2c3d4e5f6
+```
+
+참조는 기본 180초 동안 유효합니다. DOM이 바뀌거나 같은 위치가 다른 요소로
+교체되면 fingerprint 검증에 실패하며, 임의의 새 요소를 대신 누르지 않습니다.
+
+## 3. 안전 분류
+
+각 요소에는 다음 정보가 포함됩니다.
+
+```json
+{
+  "element_ref": "edge_el_...",
+  "kind": "link",
+  "label": "문서 보기",
+  "safety": {
+    "allowed": true,
+    "category": "low_risk_navigation"
+  }
+}
+```
+
+다음 동작은 자동 클릭·입력에서 차단됩니다.
+
+```text
+로그인·로그아웃
+폼 제출
+메시지 전송·게시·업로드
+구매·결제·주문·예약 확정
+삭제·탈퇴·송금·이체
+비밀번호·인증번호
+카드·신원·계좌 필드
+로그인·결제 폼
+```
+
+일반 텍스트 입력은 **초안 입력만** 수행하며 Enter, 제출, 전송은 하지 않습니다.
+
+## 4. 실행 검증
+
+클릭 후 다음을 비교합니다.
+
+```text
+URL
+페이지 제목
+checked/value/aria-pressed/aria-expanded/aria-selected
+새 탭 개수
+```
+
+명확한 변화가 있으면 `verification_strength=strong`, 변화는 없지만 클릭 자체가
+정상 반환되면 `acknowledged`로 기록합니다.
+
+텍스트 입력 후에는 `input_value()`를 다시 읽어 입력 문자열과 정확히 같은지
+확인합니다. 도구 결과에는 실제 텍스트 대신 글자 수만 남깁니다.
+
+## 설정
+
+```toml
+[edge_cdp]
+element_ref_ttl_seconds = 180.0
+max_elements = 100
+max_fill_characters = 2000
+allow_dom_actions = true
+```
+
+읽기 전용으로 실행:
+
+```powershell
+python -m src.main --disable-edge-cdp-dom-actions
+```
 
 ## 실행
-
-새 ZIP의 파일을 프로젝트에 덮어쓴 뒤:
 
 ```powershell
 Get-ChildItem -Recurse -Directory -Filter "__pycache__" |
@@ -76,20 +147,13 @@ Get-ChildItem -Recurse -Directory -Filter "__pycache__" |
 python -m src.main
 ```
 
-장치 번호 변경에 강한 설정:
+정상 시작 로그:
 
-```toml
-[audio]
-device = "auto"
-preferred_device = "BlackShark"
-device_recovery = true
-probe_devices = true
-```
-
-## callback 방식 단독 테스트
-
-```powershell
-python -c "import sounddevice as sd; cb=lambda i,f,t,s: None; x=sd.InputStream(device=18,channels=1,samplerate=48000,dtype='int16',callback=cb); x.start(); print('callback stream started'); x.stop(); x.close()"
+```text
+LLM model      : gpt-5.1
+Route balanced: gpt-5.1 / high
+Route strong  : gpt-5-pro / high
+Edge DOM       : safe actions / ref TTL=180s
 ```
 
 ## 테스트
@@ -98,17 +162,21 @@ python -c "import sounddevice as sd; cb=lambda i,f,t,s: None; x=sd.InputStream(d
 python -m unittest discover -s tests -v
 ```
 
-회귀 테스트는 같은 가짜 WDM-KS 장치가:
-
-```text
-callback 없음 → Blocking API not supported yet
-callback 있음 → 정상 개방
-```
-
-으로 동작하도록 만들어, 자동 검사에서 callback 전달을 강제합니다.
+Linux 테스트 환경에서는 실제 Edge·OpenAI API를 호출하지 않고 Playwright 형태의
+가짜 페이지와 모델 클라이언트를 사용합니다. 실제 Windows Edge 및 계정별 모델
+접근 권한은 사용자 PC에서 최종 확인해야 합니다.
 
 ## 커밋 메시지
 
 ```bash
-git commit -m "Probe WDM-KS microphones with callback streams"
+git commit -m "Add safe Edge DOM actions and real OpenAI model defaults"
+```
+
+## 다음 묶음
+
+```text
+다운로드 없는 안전한 페이지 탐색 키
+다중 탭·새 탭 선택 흐름 강화
+페이지 상태 변화 감지 및 재계획
+안전한 폼 초안 여러 필드 일괄 작성
 ```

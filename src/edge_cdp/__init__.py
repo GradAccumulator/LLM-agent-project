@@ -3,6 +3,7 @@ from .controller import (
     EdgeCdpController,
     EdgeCdpError,
     StaleTabReferenceError,
+    StaleElementReferenceError,
 )
 from .launcher import (
     ManagedEdgeConfig,
@@ -15,6 +16,7 @@ __all__ = [
     "EdgeCdpController",
     "EdgeCdpError",
     "StaleTabReferenceError",
+    "StaleElementReferenceError",
     "ManagedEdgeConfig",
     "ManagedEdgeError",
     "ManagedEdgeLauncher",

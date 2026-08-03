@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Sequence
 
 from src.settings import LoadedSettings, load_settings
+from src.model_routing import (
+    normalize_legacy_model_id,
+    normalize_reasoning_for_model,
+)
 
 
 def parse_device(
@@ -294,17 +298,17 @@ def build_parser(
 
     parser.add_argument(
         "--llm-model",
-        default="gpt-5.6-luna",
+        default="gpt-5.1",
     )
     parser.add_argument(
         "--llm-reasoning",
         choices=(
             "none",
+            "minimal",
             "low",
             "medium",
             "high",
             "xhigh",
-            "max",
         ),
         default="low",
     )
@@ -359,25 +363,25 @@ def build_parser(
     )
     parser.add_argument(
         "--routing-balanced-model",
-        default="gpt-5.6-terra",
+        default="gpt-5.1",
     )
     parser.add_argument(
         "--routing-strong-model",
-        default="gpt-5.6-sol",
+        default="gpt-5-pro",
     )
     parser.add_argument(
         "--routing-balanced-reasoning",
         choices=(
-            "none", "low", "medium", "high", "xhigh", "max"
+            "none", "minimal", "low", "medium", "high", "xhigh"
         ),
         default="high",
     )
     parser.add_argument(
         "--routing-strong-reasoning",
         choices=(
-            "none", "low", "medium", "high", "xhigh", "max"
+            "none", "minimal", "low", "medium", "high", "xhigh"
         ),
-        default="xhigh",
+        default="high",
     )
     _bool_pair(
         parser,
@@ -560,6 +564,21 @@ def build_parser(
         default=300.0,
     )
     parser.add_argument(
+        "--edge-cdp-element-ttl",
+        type=float,
+        default=180.0,
+    )
+    parser.add_argument(
+        "--edge-cdp-max-elements",
+        type=int,
+        default=100,
+    )
+    parser.add_argument(
+        "--edge-cdp-max-fill-characters",
+        type=int,
+        default=2000,
+    )
+    parser.add_argument(
         "--edge-cdp-screenshot-dir",
         type=Path,
         default=Path("screenshots"),
@@ -622,6 +641,19 @@ def build_parser(
         ),
         negative_help=(
             "Terminate only the Edge process launched by this Jarvis run."
+        ),
+    )
+
+    _bool_pair(
+        parser,
+        destination="edge_cdp_allow_dom_actions",
+        positive=("--edge-cdp-dom-actions",),
+        negative=("--disable-edge-cdp-dom-actions",),
+        positive_help=(
+            "Allow safety-filtered Edge DOM click and draft text actions."
+        ),
+        negative_help=(
+            "Keep the Edge CDP bridge read-only except tab selection."
         ),
     )
 
@@ -1118,6 +1150,7 @@ def build_parser(
         edge_cdp_auto_start=True,
         edge_cdp_restore_session=True,
         edge_cdp_keep_running=True,
+        edge_cdp_allow_dom_actions=True,
         edge_cdp_allow_tab_close=True,
         windows_uia_enabled=True,
         windows_uia_allow_actions=True,
@@ -1187,6 +1220,33 @@ def parse_args(
         or item.startswith("--device=")
         for item in effective_argv
     )
+
+    migrations: list[str] = []
+    for attribute in (
+        "llm_model",
+        "routing_balanced_model",
+        "routing_strong_model",
+    ):
+        current = str(getattr(args, attribute))
+        normalized, note = normalize_legacy_model_id(current)
+        setattr(args, attribute, normalized)
+        if note is not None:
+            migrations.append(note)
+
+    for model_attribute, effort_attribute in (
+        ("llm_model", "llm_reasoning"),
+        ("routing_balanced_model", "routing_balanced_reasoning"),
+        ("routing_strong_model", "routing_strong_reasoning"),
+    ):
+        normalized, note = normalize_reasoning_for_model(
+            str(getattr(args, model_attribute)),
+            str(getattr(args, effort_attribute)),
+        )
+        setattr(args, effort_attribute, normalized)
+        if note is not None:
+            migrations.append(note)
+
+    args.model_migrations = tuple(dict.fromkeys(migrations))
     return args, loaded
 
 
@@ -1205,6 +1265,7 @@ def print_effective_config(
         "list_memories",
         "list_tts_voices",
         "device_was_explicit",
+        "model_migrations",
     }
     values = {
         key: (

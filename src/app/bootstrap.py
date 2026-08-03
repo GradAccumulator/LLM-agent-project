@@ -297,11 +297,23 @@ def build_runtime(
             tab_ref_ttl_seconds=(
                 args.edge_cdp_tab_ttl
             ),
+            element_ref_ttl_seconds=(
+                args.edge_cdp_element_ttl
+            ),
+            max_elements=(
+                args.edge_cdp_max_elements
+            ),
+            max_fill_characters=(
+                args.edge_cdp_max_fill_characters
+            ),
             screenshot_directory=(
                 args.edge_cdp_screenshot_dir
             ),
             allow_tab_close=(
                 args.edge_cdp_allow_tab_close
+            ),
+            allow_dom_actions=(
+                args.edge_cdp_allow_dom_actions
             ),
             auto_start=(
                 args.edge_cdp_auto_start
@@ -465,6 +477,14 @@ def build_runtime(
         ),
     )
 
+    for migration in getattr(
+        args,
+        "model_migrations",
+        (),
+    ):
+        print(
+            f"Model migration : {migration}"
+        )
     print(
         f"Connecting GPT model "
         f"'{args.llm_model}'..."
@@ -745,6 +765,11 @@ def build_runtime(
     print(
         f"Edge auto start: "
         f"{'enabled' if args.edge_cdp_auto_start else 'disabled'}"
+    )
+    print(
+        f"Edge DOM       : "
+        f"{'safe actions' if args.edge_cdp_allow_dom_actions else 'read-only'} "
+        f"/ ref TTL={args.edge_cdp_element_ttl:.0f}s"
     )
     print(
         f"Edge tab close : "

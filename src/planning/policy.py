@@ -43,6 +43,8 @@ ACTION_TOOLS = {
     "uia_toggle_element",
     "uia_select_element",
     "edge_cdp_select_tab",
+    "edge_cdp_click_element",
+    "edge_cdp_fill_element",
     "edge_cdp_close_tab",
 }
 
@@ -365,6 +367,36 @@ def verify_action_result(
                 if isinstance(tab, dict)
                 else None
             ),
+        }
+
+    elif tool_name == "edge_cdp_click_element":
+        verified = (
+            payload.get("clicked") is True
+            and payload.get("verified") is True
+        )
+        strength = str(
+            payload.get("verification_strength")
+            or "acknowledged"
+        )
+        evidence = {
+            "clicked": payload.get("clicked"),
+            "observed_change": payload.get("observed_change"),
+            "element": payload.get("element"),
+            "before": payload.get("before"),
+            "after": payload.get("after"),
+        }
+
+    elif tool_name == "edge_cdp_fill_element":
+        verified = (
+            payload.get("value_set") is True
+            and payload.get("verified") is True
+        )
+        strength = "strong"
+        evidence = {
+            "value_set": payload.get("value_set"),
+            "verified": payload.get("verified"),
+            "characters": payload.get("characters"),
+            "element": payload.get("element"),
         }
 
     elif tool_name == "edge_cdp_close_tab":

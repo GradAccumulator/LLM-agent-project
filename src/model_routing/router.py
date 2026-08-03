@@ -17,13 +17,55 @@ class ModelRoutingError(RuntimeError):
     pass
 
 
+LEGACY_MODEL_ALIASES = {
+    "gpt-5.6-luna": "gpt-5.1",
+    "gpt-5.6-terra": "gpt-5.1",
+    "gpt-5.6-sol": "gpt-5-pro",
+}
+
+
+def normalize_legacy_model_id(value: str) -> tuple[str, str | None]:
+    model = value.strip()
+    replacement = LEGACY_MODEL_ALIASES.get(model.casefold())
+    if replacement is None:
+        return model, None
+    return replacement, f"{model} -> {replacement}"
+
+
+def normalize_reasoning_for_model(
+    model: str,
+    effort: str,
+) -> tuple[str, str | None]:
+    normalized_model = model.strip().casefold()
+    normalized_effort = effort.strip().casefold()
+
+    if normalized_effort == "max":
+        normalized_effort = "xhigh"
+
+    if normalized_model == "gpt-5-pro":
+        if normalized_effort != "high":
+            return "high", f"{effort} -> high for gpt-5-pro"
+        return normalized_effort, None
+
+    if normalized_model == "gpt-5.1":
+        replacements = {
+            "minimal": "low",
+            "xhigh": "high",
+        }
+        replacement = replacements.get(normalized_effort)
+        if replacement is not None:
+            return replacement, f"{effort} -> {replacement} for gpt-5.1"
+
+    return normalized_effort, None
+
+
 @dataclass(frozen=True, slots=True)
 class ModelRoutingConfig:
     enabled: bool = True
-    balanced_model: str = "gpt-5.6-terra"
-    strong_model: str = "gpt-5.6-sol"
+    balanced_model: str = "gpt-5.1"
+    strong_model: str = "gpt-5-pro"
     balanced_reasoning: str = "high"
-    strong_reasoning: str = "xhigh"
+    strong_reasoning: str = "high"
     allow_user_override: bool = True
     allow_automatic_escalation: bool = True
     max_delegations_per_turn: int = 1
@@ -34,7 +76,7 @@ class ModelRoutingConfig:
 
     def __post_init__(self) -> None:
         allowed = {
-            "none", "low", "medium", "high", "xhigh", "max"
+            "none", "minimal", "low", "medium", "high", "xhigh"
         }
         if not self.balanced_model.strip():
             raise ValueError("balanced_model must not be empty.")
@@ -103,12 +145,12 @@ class ModelDelegationRecord:
 
 
 _STRONG_DIRECT_PATTERNS = (
-    re.compile(r"(?:gpt[- ]?5\.6[- ]?sol|sol|솔)\s*(?:로|모델로)"),
+    re.compile(r"(?:gpt[- ]?5[- ]?pro)\s*(?:로|모델로)"),
     re.compile(r"(?:가장\s*)?(?:강한|강력한|상위|최상위|더\s*높은|더\s*강한)\s*모델(?:로|을|을\s*써|을\s*사용)"),
     re.compile(r"(?:더\s*)?깊게\s*(?:생각|추론|분석)(?:해|해서|해줘|해\s*줘)"),
 )
 _BALANCED_DIRECT_PATTERNS = (
-    re.compile(r"(?:gpt[- ]?5\.6[- ]?terra|terra|테라)\s*(?:로|모델로)"),
+    re.compile(r"(?:gpt[- ]?5\.1)\s*(?:로|모델로)"),
     re.compile(r"(?:균형|중간|밸런스)\s*모델(?:로|을|을\s*써|을\s*사용)"),
 )
 _ROUTING_ACTION_MARKERS = (
@@ -143,7 +185,7 @@ def detect_explicit_model_request(
     references_strong = any(
         marker in normalized
         for marker in (
-            "gpt-5.6-sol", "sol 모델", "솔 모델", "강한 모델",
+            "gpt-5-pro", "강한 모델",
             "강력한 모델", "상위 모델", "최상위 모델",
             "더 높은 모델", "더 강한 모델",
         )
@@ -151,7 +193,7 @@ def detect_explicit_model_request(
     references_balanced = any(
         marker in normalized
         for marker in (
-            "gpt-5.6-terra", "terra 모델", "테라 모델",
+            "gpt-5.1",
             "균형 모델", "밸런스 모델", "중간 모델",
         )
     )

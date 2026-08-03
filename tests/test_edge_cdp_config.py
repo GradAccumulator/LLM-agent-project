@@ -22,6 +22,13 @@ class EdgeCdpConfigTests(
         self.assertTrue(
             args.edge_cdp_allow_tab_close
         )
+        self.assertTrue(
+            args.edge_cdp_allow_dom_actions
+        )
+        self.assertEqual(
+            args.edge_cdp_element_ttl,
+            180.0,
+        )
 
     def test_can_disable_tab_close(
         self,

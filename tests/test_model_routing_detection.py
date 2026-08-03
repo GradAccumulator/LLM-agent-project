@@ -12,7 +12,7 @@ class ModelRoutingDetectionTests(unittest.TestCase):
     def test_strong_model_requests(self) -> None:
         for text in (
             "이번 건 강한 모델로 판단해줘",
-            "Sol로 분석해줘",
+            "GPT-5 pro로 분석해줘",
             "상위 모델로 검토해줘",
             "이건 더 깊게 생각해줘",
         ):
@@ -23,7 +23,7 @@ class ModelRoutingDetectionTests(unittest.TestCase):
 
     def test_balanced_request(self) -> None:
         result = detect_explicit_model_request(
-            "이번 부분은 Terra로 검토해줘"
+            "이번 부분은 균형 모델로 검토해줘"
         )
         self.assertIsNotNone(result)
         self.assertEqual(result.tier, ModelTier.BALANCED)
@@ -36,7 +36,7 @@ class ModelRoutingDetectionTests(unittest.TestCase):
         )
         self.assertIsNone(
             detect_explicit_model_request(
-                "Sol 모델 가격이 뭐야?"
+                "GPT-5 pro 가격이 뭐야?"
             )
         )
 

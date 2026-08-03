@@ -15,6 +15,7 @@ from src.tools.registry import (
 class _Controller:
     enabled = True
     allow_tab_close = True
+    allow_dom_actions = True
     config = EdgeCdpConfig()
 
     def __init__(self) -> None:
@@ -54,6 +55,36 @@ class _Controller:
         return {
             "tab_ref": tab_ref,
             "include_text": include_text,
+        }
+
+    def list_elements(self, *, tab_ref, kind, limit):
+        return {
+            "tab_ref": tab_ref,
+            "kind": kind,
+            "count": 1,
+            "elements": [{
+                "element_ref": "el1",
+                "label": "Example",
+                "safety": {"allowed": True},
+            }],
+        }
+
+    def get_element(self, *, element_ref):
+        return {"element_ref": element_ref}
+
+    def click_element(self, *, element_ref):
+        return {
+            "clicked": True,
+            "verified": True,
+            "element_ref": element_ref,
+        }
+
+    def fill_element(self, *, element_ref, value):
+        return {
+            "value_set": True,
+            "verified": True,
+            "element_ref": element_ref,
+            "characters": len(value),
         }
 
     def capture_tab(
@@ -133,6 +164,18 @@ class EdgeCdpToolTests(
         )
         self.assertIn(
             "edge_cdp_capture_tab",
+            registry.names,
+        )
+        self.assertIn(
+            "edge_cdp_list_elements",
+            registry.names,
+        )
+        self.assertIn(
+            "edge_cdp_click_element",
+            registry.names,
+        )
+        self.assertIn(
+            "edge_cdp_fill_element",
             registry.names,
         )
 

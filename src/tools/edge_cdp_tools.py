@@ -157,6 +157,110 @@ def register_edge_cdp_tools(
         )
     )
 
+    list_elements = getattr(controller, "list_elements", None)
+    get_element = getattr(controller, "get_element", None)
+    click_element = getattr(controller, "click_element", None)
+    fill_element = getattr(controller, "fill_element", None)
+    dom_capable = callable(list_elements) and callable(get_element)
+    dom_actions_allowed = bool(
+        getattr(controller, "allow_dom_actions", False)
+    )
+    if dom_capable:
+        registry.register(
+            ToolSpec(
+                name="edge_cdp_list_elements",
+                description=(
+                    "선택한 Edge 탭에서 보이는 링크·버튼·텍스트 입력창을 읽고 "
+                    "짧게 유효한 element_ref와 안전 분류를 반환한다. 요소 조작 "
+                    "전에는 반드시 이 도구로 정확한 대상을 확인한다."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "tab_ref": {
+                            "type": ["string", "null"],
+                        },
+                        "kind": {
+                            "type": "string",
+                            "enum": ["all", "link", "button", "textbox"],
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                        },
+                    },
+                    "required": ["tab_ref", "kind", "limit"],
+                    "additionalProperties": False,
+                },
+                handler=list_elements,
+            )
+        )
+
+        registry.register(
+            ToolSpec(
+                name="edge_cdp_get_element",
+                description=(
+                    "edge_cdp_list_elements에서 받은 element_ref가 여전히 같은 "
+                    "DOM 요소인지 확인하고 현재 안전 분류를 다시 읽는다."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "element_ref": {"type": "string"},
+                    },
+                    "required": ["element_ref"],
+                    "additionalProperties": False,
+                },
+                handler=get_element,
+            )
+        )
+
+        if dom_actions_allowed and callable(click_element) and callable(fill_element):
+            registry.register(
+                ToolSpec(
+                    name="edge_cdp_click_element",
+                    description=(
+                        "safety.allowed=true인 저위험 Edge 링크나 버튼을 정확한 "
+                        "element_ref로 클릭하고 URL·제목·상태·새 탭 변화를 검증한다. "
+                        "로그인, 제출, 전송, 구매, 결제, 삭제 요소는 차단된다."
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "element_ref": {"type": "string"},
+                        },
+                        "required": ["element_ref"],
+                        "additionalProperties": False,
+                    },
+                    handler=click_element,
+                )
+            )
+
+            registry.register(
+                ToolSpec(
+                    name="edge_cdp_fill_element",
+                    description=(
+                        "safety.allowed=true인 일반 Edge 텍스트 입력창에 초안만 "
+                        "입력하고 실제 값을 검증한다. 비밀번호·인증·결제·신원·계좌·"
+                        "로그인 필드는 차단하며 제출이나 전송은 하지 않는다."
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "element_ref": {"type": "string"},
+                            "value": {
+                                "type": "string",
+                                "maxLength": 2000,
+                            },
+                        },
+                        "required": ["element_ref", "value"],
+                        "additionalProperties": False,
+                    },
+                    handler=fill_element,
+                )
+            )
+
     registry.register(
         ToolSpec(
             name="edge_cdp_capture_tab",
