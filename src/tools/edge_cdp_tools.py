@@ -132,6 +132,7 @@ def register_edge_cdp_tools(
                 },
                 "required": [
                     "tab_ref",
+                    "workflow_ref",
                 ],
                 "additionalProperties": False,
             },
@@ -195,6 +196,7 @@ def register_edge_cdp_tools(
                 },
                 "required": [
                     "goal",
+                    "tab_ref",
                 ],
                 "additionalProperties": False,
             },
@@ -262,6 +264,11 @@ def register_edge_cdp_tools(
                 },
                 "required": [
                     "workflow_ref",
+                    "expected_url_contains",
+                    "expected_title_contains",
+                    "expected_text_contains",
+                    "minimum_tab_count",
+                    "require_all_steps_verified",
                 ],
                 "additionalProperties": False,
             },
@@ -431,6 +438,7 @@ def register_edge_cdp_tools(
                         },
                         "required": [
                             "element_ref",
+                            "workflow_ref",
                         ],
                         "additionalProperties": False,
                     },
@@ -464,6 +472,7 @@ def register_edge_cdp_tools(
                         "required": [
                             "element_ref",
                             "value",
+                            "workflow_ref",
                         ],
                         "additionalProperties": False,
                     },

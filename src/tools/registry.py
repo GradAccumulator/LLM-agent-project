@@ -30,6 +30,114 @@ ToolHandler = Callable[
 ]
 
 
+def _validate_strict_schema(
+    schema: Any,
+    *,
+    path: str = "parameters",
+) -> None:
+    """Validate the JSON-schema subset required by strict tools.
+
+    OpenAI strict function schemas require every object property to be
+    present in that object's ``required`` array. Optional values are
+    represented by a nullable type, not by omitting the key from
+    ``required``. Validate locally so a bad tool cannot make every model
+    request fail later with an HTTP 400.
+    """
+
+    if not isinstance(schema, dict):
+        raise ValueError(
+            f"Strict tool schema node must be an object: {path}"
+        )
+
+    schema_type = schema.get("type")
+    is_object = (
+        schema_type == "object"
+        or (
+            isinstance(schema_type, list)
+            and "object" in schema_type
+        )
+    )
+    if is_object:
+        properties = schema.get("properties")
+        if not isinstance(properties, dict):
+            raise ValueError(
+                f"Strict object schema must define properties: {path}"
+            )
+        required = schema.get("required")
+        if not isinstance(required, list):
+            raise ValueError(
+                f"Strict object schema must define required: {path}"
+            )
+
+        property_names = set(properties)
+        required_names = {
+            str(name)
+            for name in required
+        }
+        missing = sorted(
+            property_names
+            - required_names
+        )
+        extra = sorted(
+            required_names
+            - property_names
+        )
+        if missing or extra:
+            details: list[str] = []
+            if missing:
+                details.append(
+                    "missing required keys: "
+                    + ", ".join(missing)
+                )
+            if extra:
+                details.append(
+                    "unknown required keys: "
+                    + ", ".join(extra)
+                )
+            raise ValueError(
+                f"Invalid strict object schema at {path}: "
+                + "; ".join(details)
+            )
+        if schema.get("additionalProperties") is not False:
+            raise ValueError(
+                "Strict object schema must set "
+                f"additionalProperties=false: {path}"
+            )
+
+        for name, child in properties.items():
+            _validate_strict_schema(
+                child,
+                path=f"{path}.properties.{name}",
+            )
+
+    items = schema.get("items")
+    if items is not None:
+        _validate_strict_schema(
+            items,
+            path=f"{path}.items",
+        )
+
+    for keyword in (
+        "anyOf",
+        "oneOf",
+        "allOf",
+    ):
+        branches = schema.get(keyword)
+        if branches is None:
+            continue
+        if not isinstance(branches, list):
+            raise ValueError(
+                f"{keyword} must be an array: {path}"
+            )
+        for index, branch in enumerate(branches):
+            _validate_strict_schema(
+                branch,
+                path=(
+                    f"{path}.{keyword}[{index}]"
+                ),
+            )
+
+
 @dataclass(frozen=True, slots=True)
 class ToolSpec:
     name: str
@@ -221,6 +329,15 @@ class ToolRegistry:
                 "Tool schema must disable "
                 f"additional properties: {name}"
             )
+
+        try:
+            _validate_strict_schema(
+                tool.parameters
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid strict tool schema for {name}: {exc}"
+            ) from exc
 
         self._tools[name] = tool
 
