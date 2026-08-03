@@ -163,6 +163,9 @@ max_value_characters = 2048
 enabled = true
 max_steps = 6
 max_repair_attempts = 2
+max_revisions = 3
+max_same_failure_repeats = 2
+tool_switching = true
 
 [streaming]
 enabled = true

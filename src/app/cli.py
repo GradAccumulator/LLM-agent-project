@@ -917,6 +917,28 @@ def build_parser(
         type=int,
         default=2,
     )
+    parser.add_argument(
+        "--planning-max-revisions",
+        type=int,
+        default=3,
+    )
+    parser.add_argument(
+        "--planning-max-same-failure-repeats",
+        type=int,
+        default=2,
+    )
+    _bool_pair(
+        parser,
+        destination="planning_tool_switching",
+        positive=("--planning-tool-switching",),
+        negative=("--disable-planning-tool-switching",),
+        positive_help=(
+            "Recommend a safer alternate tool channel after failures."
+        ),
+        negative_help=(
+            "Keep planner recovery suggestions in the current tool channel."
+        ),
+    )
 
     _bool_pair(
         parser,
@@ -1168,6 +1190,7 @@ def build_parser(
         scheduler_announce_tts=True,
         long_term_memory_enabled=True,
         planning_enabled=True,
+        planning_tool_switching=True,
         streaming_enabled=True,
         continuous_conversation=True,
         browser_automation=True,

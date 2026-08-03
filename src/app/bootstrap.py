@@ -514,6 +514,15 @@ def build_runtime(
             planning_max_repair_attempts=(
                 args.planning_max_repair_attempts
             ),
+            planning_max_revisions=(
+                args.planning_max_revisions
+            ),
+            planning_max_same_failure_repeats=(
+                args.planning_max_same_failure_repeats
+            ),
+            planning_tool_switching=(
+                args.planning_tool_switching
+            ),
             long_term_memory_enabled=(
                 args.long_term_memory_enabled
             ),
@@ -826,7 +835,13 @@ def build_runtime(
     print(
         f"Plan limits    : "
         f"steps={args.planning_max_steps}, "
-        f"repairs={args.planning_max_repair_attempts}"
+        f"attempt_repairs={args.planning_max_repair_attempts}, "
+        f"revisions={args.planning_max_revisions}, "
+        f"same_failure={args.planning_max_same_failure_repeats}"
+    )
+    print(
+        f"Tool switching : "
+        f"{'enabled' if args.planning_tool_switching else 'disabled'}"
     )
     print(
         f"LLM streaming  : "

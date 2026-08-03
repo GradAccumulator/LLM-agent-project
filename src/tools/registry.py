@@ -261,12 +261,20 @@ class ToolRegistry:
         planning_required: bool,
         max_steps: int,
         max_repair_attempts: int,
+        max_plan_revisions: int = 3,
+        max_same_failure_repeats: int = 2,
+        tool_switching_enabled: bool = True,
     ) -> None:
         self.plan_tracker.begin_request(
             required=planning_required,
             max_steps=max_steps,
-            max_repair_attempts=(
-                max_repair_attempts
+            max_repair_attempts=max_repair_attempts,
+            max_plan_revisions=max_plan_revisions,
+            max_same_failure_repeats=(
+                max_same_failure_repeats
+            ),
+            tool_switching_enabled=(
+                tool_switching_enabled
             ),
         )
 
@@ -413,21 +421,37 @@ class ToolRegistry:
         name: str,
         arguments: dict[str, Any],
     ) -> ToolExecutionResult | None:
-        action = is_action_tool(name)
-        if (
-            action
-            and self.plan_tracker.required
-            and not self.plan_tracker.active
-        ):
-            snapshot = (
-                self.plan_tracker.snapshot()
-            )
+        if not is_action_tool(name) or not self.plan_tracker.required:
+            return None
+
+        snapshot = self.plan_tracker.snapshot()
+        status = snapshot["status"]
+        if status == "required":
             return self._failure(
                 name=name,
                 arguments=arguments,
                 error=(
-                    "This multi-step request requires "
-                    "begin_task_plan before action tools."
+                    "This multi-step request requires begin_task_plan "
+                    "before action tools."
+                ),
+                verified=False,
+                verification={
+                    "verified": False,
+                    "strength": "precondition",
+                    "tool": name,
+                    "evidence": {"required_tool": "begin_task_plan"},
+                },
+                plan_progress=snapshot,
+            )
+
+        if status == "repairing":
+            return self._failure(
+                name=name,
+                arguments=arguments,
+                error=(
+                    "The current plan step is waiting for repair. Call "
+                    "get_plan_recovery and repair_task_plan before another "
+                    "action tool."
                 ),
                 verified=False,
                 verification={
@@ -435,34 +459,22 @@ class ToolRegistry:
                     "strength": "precondition",
                     "tool": name,
                     "evidence": {
-                        "required_tool": (
-                            "begin_task_plan"
-                        )
+                        "required_tools": [
+                            "get_plan_recovery",
+                            "repair_task_plan",
+                        ]
                     },
                 },
                 plan_progress=snapshot,
             )
 
-        if (
-            action
-            and self.plan_tracker.status.value
-            in {
-                "failed",
-                "abandoned",
-                "completed",
-            }
-            and self.plan_tracker.required
-        ):
-            snapshot = (
-                self.plan_tracker.snapshot()
-            )
+        if status in {"failed", "abandoned", "completed"}:
             return self._failure(
                 name=name,
                 arguments=arguments,
                 error=(
-                    "No more action tools are "
-                    "allowed because the task "
-                    f"plan is {snapshot['status']}."
+                    "No more action tools are allowed because the task "
+                    f"plan is {status}."
                 ),
                 verified=False,
                 plan_progress=snapshot,
@@ -605,8 +617,10 @@ class ToolRegistry:
                     .record_action(
                         tool_name=name,
                         verified=False,
-                        verification=(
-                            verification
+                        verification=verification,
+                        error=(
+                            str(exc)
+                            or type(exc).__name__
                         ),
                     )
                 )
@@ -650,8 +664,14 @@ class ToolRegistry:
                 .record_action(
                     tool_name=name,
                     verified=verified,
-                    verification=(
-                        verification
+                    verification=verification,
+                    error=(
+                        str(payload.get("error") or "")
+                        or (
+                            "Postcondition verification failed."
+                            if not verified
+                            else None
+                        )
                     ),
                 )
             )

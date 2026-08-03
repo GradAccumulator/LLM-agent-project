@@ -105,7 +105,9 @@ DEFAULT_INSTRUCTIONS = """\
 - 비밀번호, 카드, 신원 정보, 계좌 정보 입력은 브라우저 도구로 처리하지 않는다.
 - 등록되지 않은 컴퓨터 작업은 아직 지원하지 않는다고 솔직하게 말한다.
 - 여러 단계의 컴퓨터 작업은 계획을 세우고, 한 단계씩 실행하며, 도구 결과의 verification과 plan_progress를 확인한 뒤 다음 단계로 넘어간다.
-- verification이 false이면 완료했다고 말하지 말고 현재 단계를 수정해 재시도한다.
+- verification이 false이면 완료했다고 말하지 않는다. plan이 repairing이면 get_plan_recovery와 repair_task_plan을 사용하고 같은 도구를 그대로 반복하지 않는다.
+- 실패한 현재·미래 단계만 부분 재계획하고 이미 완료된 단계와 검증 증거는 보존한다.
+- 안전·권한·인증 실패는 다른 도구로 우회하지 않고 사용자 개입이 필요하다고 알린다.
 - 확실하지 않은 내용은 추측해서 단정하지 않는다.
 - 장기 메모리는 사용자가 “기억해”, “저장해”, “앞으로 기본으로 써”처럼 명시적으로 요청한 경우에만 저장한다.
 - 대화에서 추론한 정보나 우연히 들은 정보는 자동 저장하지 않는다.
@@ -129,6 +131,9 @@ class AgentConfig:
     planning_enabled: bool = True
     planning_max_steps: int = 6
     planning_max_repair_attempts: int = 2
+    planning_max_revisions: int = 3
+    planning_max_same_failure_repeats: int = 2
+    planning_tool_switching: bool = True
     long_term_memory_enabled: bool = True
     memory_context_limit: int = 20
     memory_context_characters: int = 4_000
@@ -229,6 +234,14 @@ class JarvisAgent:
         if config.planning_max_repair_attempts < 0:
             raise ValueError(
                 "planning_max_repair_attempts must not be negative."
+            )
+        if config.planning_max_revisions < 0:
+            raise ValueError(
+                "planning_max_revisions must not be negative."
+            )
+        if config.planning_max_same_failure_repeats < 1:
+            raise ValueError(
+                "planning_max_same_failure_repeats must be at least 1."
             )
         if config.memory_context_limit <= 0:
             raise ValueError(
@@ -505,6 +518,15 @@ class JarvisAgent:
             max_repair_attempts=(
                 self.config.planning_max_repair_attempts
             ),
+            max_plan_revisions=(
+                self.config.planning_max_revisions
+            ),
+            max_same_failure_repeats=(
+                self.config.planning_max_same_failure_repeats
+            ),
+            tool_switching_enabled=(
+                self.config.planning_tool_switching
+            ),
         )
 
         base_instructions = self.config.instructions
@@ -543,14 +565,17 @@ class JarvisAgent:
 
         if planning_required:
             protocol = """
-이번 요청은 다단계 컴퓨터 작업으로 판정되었다.
+이번 요청은 다단계 컴퓨터 작업으로 판정되었습니다.
 행동 도구를 실행하기 전에 반드시 begin_task_plan을 호출하라.
-계획은 2~6개의 짧은 단계로 만들고, 각 단계는 하나의 검증 가능한 행동 또는 관찰이어야 한다.
-현재 단계 하나만 실행하고 도구 출력의 verification.verified와 plan_progress를 확인하라.
-검증에 실패하면 다음 단계로 넘어가지 말고 현재 단계를 관찰·수정한 뒤 재시도하라.
+계획은 2~설정된 최대 개수의 짧은 단계로 만들고, 각 단계는 하나의 검증 가능한 행동 또는 관찰이어야 한다.
+현재 단계 하나만 실행하고 verification.verified와 plan_progress를 확인하라.
+verification이 false이고 plan 상태가 repairing이면 행동 도구를 다시 호출하지 말고 get_plan_recovery를 먼저 호출하라.
+실패 범주와 recommended_tools를 확인한 뒤 repair_task_plan으로 현재 단계만 retry, switch_tool, replace_current 또는 replace_remaining 처리하라.
+같은 failure signature가 반복되면 동일 도구를 다시 쓰지 말고 DOM→UIA→Vision 등 다른 구조적 채널로 전환하라.
+안전 차단, 권한, 인증이 원인이면 자동 우회하지 말고 fail_plan_step 또는 사용자 안내로 중단하라.
 관찰만으로 끝난 단계는 complete_plan_step에 구체적인 증거를 넣어 완료하라.
-모든 단계가 completed가 된 뒤 finish_task_plan을 호출하고 최종 답변을 하라.
-계획이 failed 또는 abandoned이면 성공했다고 말하지 마라.
+모든 단계가 completed가 된 뒤 finish_task_plan의 audit.passed=true를 확인하고 최종 답변을 하라.
+계획이 repairing, failed 또는 abandoned이면 성공했다고 말하지 마라.
 """
             self._request_instructions = (
                 base_instructions

@@ -8,6 +8,8 @@ from typing import Any
 PLANNING_TOOLS = {
     "begin_task_plan",
     "get_task_plan",
+    "get_plan_recovery",
+    "repair_task_plan",
     "complete_plan_step",
     "fail_plan_step",
     "finish_task_plan",

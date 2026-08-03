@@ -67,6 +67,9 @@ maximum_chunk_characters = 160
 enabled = true
 max_steps = 6
 max_repair_attempts = 2
+max_revisions = 3
+max_same_failure_repeats = 2
+tool_switching = true
 
 
 [long_term_memory]

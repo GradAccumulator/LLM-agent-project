@@ -469,6 +469,20 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
             int,
             _as_int,
         ),
+        "max_revisions": _SettingSpec(
+            "planning_max_revisions",
+            int,
+            _as_int,
+        ),
+        "max_same_failure_repeats": _SettingSpec(
+            "planning_max_same_failure_repeats",
+            int,
+            _as_int,
+        ),
+        "tool_switching": _SettingSpec(
+            "planning_tool_switching",
+            bool,
+        ),
     },
     "streaming": {
         "enabled": _SettingSpec(
@@ -719,6 +733,7 @@ def _validate_values(values: dict[str, Any]) -> None:
         "memory_max_entries",
         "memory_max_value_characters",
         "planning_max_steps",
+        "planning_max_same_failure_repeats",
         "streaming_minimum_characters",
         "streaming_maximum_characters",
         "max_saved_audio_files",
@@ -749,6 +764,20 @@ def _validate_values(values: dict[str, Any]) -> None:
     ) < 0:
         raise ConfigError(
             "planning_max_repair_attempts must not be negative."
+        )
+    if values.get(
+        "planning_max_revisions",
+        0,
+    ) < 0:
+        raise ConfigError(
+            "planning_max_revisions must not be negative."
+        )
+    if values.get(
+        "planning_max_same_failure_repeats",
+        1,
+    ) < 1:
+        raise ConfigError(
+            "planning_max_same_failure_repeats must be at least 1."
         )
 
     if (

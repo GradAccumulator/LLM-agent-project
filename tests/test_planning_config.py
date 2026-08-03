@@ -8,25 +8,14 @@ from src.llm.agent import JarvisAgent
 
 class PlanningConfigTests(unittest.TestCase):
     def test_defaults(self) -> None:
-        args, _ = parse_args(
-            ["--print-config"]
-        )
-
-        self.assertTrue(
-            args.planning_enabled
-        )
-        self.assertEqual(
-            args.planning_max_steps,
-            6,
-        )
-        self.assertEqual(
-            args.planning_max_repair_attempts,
-            2,
-        )
-        self.assertEqual(
-            args.llm_max_tool_rounds,
-            12,
-        )
+        args, _ = parse_args(["--print-config"])
+        self.assertTrue(args.planning_enabled)
+        self.assertEqual(args.planning_max_steps, 6)
+        self.assertEqual(args.planning_max_repair_attempts, 2)
+        self.assertEqual(args.planning_max_revisions, 3)
+        self.assertEqual(args.planning_max_same_failure_repeats, 2)
+        self.assertTrue(args.planning_tool_switching)
+        self.assertEqual(args.llm_max_tool_rounds, 12)
 
     def test_agent_heuristic(self) -> None:
         self.assertTrue(
@@ -35,9 +24,7 @@ class PlanningConfigTests(unittest.TestCase):
             )
         )
         self.assertFalse(
-            JarvisAgent.should_plan_text(
-                "현재 화면 설명해줘"
-            )
+            JarvisAgent.should_plan_text("현재 화면 설명해줘")
         )
 
 
