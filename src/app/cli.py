@@ -462,6 +462,22 @@ def build_parser(
     )
     _bool_pair(
         parser,
+        destination="google_calendar_allow_writes",
+        positive=(
+            "--google-calendar-writes",
+        ),
+        negative=(
+            "--disable-google-calendar-writes",
+        ),
+        positive_help=(
+            "Register confirmed Calendar create, update, and delete tools."
+        ),
+        negative_help=(
+            "Keep Google Calendar read-only."
+        ),
+    )
+    _bool_pair(
+        parser,
         destination="google_calendar_open_browser",
         positive=("--google-calendar-open-browser",),
         negative=("--google-calendar-no-browser",),
@@ -777,6 +793,7 @@ def build_parser(
         gmail_enabled=True,
         gmail_open_browser=True,
         google_calendar_enabled=True,
+        google_calendar_allow_writes=True,
         google_calendar_open_browser=True,
         scheduler_enabled=True,
         scheduler_announce_tts=True,

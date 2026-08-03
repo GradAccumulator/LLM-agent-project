@@ -71,6 +71,9 @@ def main() -> int:
                 max_results=args.google_calendar_max_results,
                 oauth_port=args.google_calendar_oauth_port,
                 open_browser_for_auth=args.google_calendar_open_browser,
+                allow_writes=(
+                    args.google_calendar_allow_writes
+                ),
             )
         )
         try:

@@ -34,6 +34,9 @@ ACTION_TOOLS = {
     "schedule_recurring_reminder",
     "cancel_scheduled_reminder",
     "snooze_scheduled_reminder",
+    "google_calendar_create_event",
+    "google_calendar_update_event",
+    "google_calendar_delete_event",
 }
 
 _SEQUENCE_MARKERS = (
@@ -215,6 +218,71 @@ def verify_action_result(
         verified = payload.get("snoozed") is True
         strength = "strong"
         evidence = {"snoozed": payload.get("snoozed"), "task": payload.get("task")}
+
+    elif tool_name == "google_calendar_create_event":
+        event = payload.get("event") or {}
+        verified = (
+            payload.get("created") is True
+            and payload.get("verified") is True
+            and isinstance(event, dict)
+            and bool(event.get("id"))
+        )
+        strength = "strong"
+        evidence = {
+            "created": payload.get("created"),
+            "api_verified": payload.get("verified"),
+            "event_id": (
+                event.get("id")
+                if isinstance(event, dict)
+                else None
+            ),
+            "summary": (
+                event.get("summary")
+                if isinstance(event, dict)
+                else None
+            ),
+        }
+
+    elif tool_name == "google_calendar_update_event":
+        event = payload.get("event") or {}
+        verified = (
+            payload.get("updated") is True
+            and payload.get("verified") is True
+            and isinstance(event, dict)
+            and event.get("id")
+            == arguments.get("event_id")
+        )
+        strength = "strong"
+        evidence = {
+            "updated": payload.get("updated"),
+            "api_verified": payload.get("verified"),
+            "event_id": (
+                event.get("id")
+                if isinstance(event, dict)
+                else None
+            ),
+            "changed_fields": payload.get(
+                "changed_fields"
+            ),
+        }
+
+    elif tool_name == "google_calendar_delete_event":
+        verified = (
+            payload.get("deleted") is True
+            and payload.get(
+                "deletion_verified"
+            ) is True
+        )
+        strength = "strong"
+        evidence = {
+            "deleted": payload.get("deleted"),
+            "deletion_verified": payload.get(
+                "deletion_verified"
+            ),
+            "event_id": arguments.get(
+                "event_id"
+            ),
+        }
 
     elif tool_name == "browser_close":
         # Closing an already-closed browser is an idempotent success.

@@ -254,6 +254,9 @@ def build_runtime(
             max_results=args.google_calendar_max_results,
             oauth_port=args.google_calendar_oauth_port,
             open_browser_for_auth=args.google_calendar_open_browser,
+            allow_writes=(
+                args.google_calendar_allow_writes
+            ),
         )
     )
     scheduler_store = SchedulerStore(
@@ -524,7 +527,18 @@ def build_runtime(
         f"({args.confirmation_timeout:.0f}s timeout)"
     )
     print(
-        "Protected demo : create_note"
+        "Protected tools: create_note, "
+        "Calendar create/update/delete"
+    )
+    calendar_status = (
+        google_calendar_client.status()
+    )
+    print(
+        "Calendar scope : read + event write"
+    )
+    print(
+        f"Calendar writes: "
+        f"{'ready' if calendar_status['write_ready'] else 'reauth required'}"
     )
     print(
         f"Scheduler      : {'enabled' if args.scheduler_enabled else 'disabled'}"

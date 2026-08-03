@@ -243,6 +243,9 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
         "open_browser_for_auth": _SettingSpec(
             "google_calendar_open_browser", bool
         ),
+        "allow_writes": _SettingSpec(
+            "google_calendar_allow_writes", bool
+        ),
     },
     "scheduler": {
         "enabled": _SettingSpec("scheduler_enabled", bool),
