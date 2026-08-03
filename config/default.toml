@@ -164,6 +164,20 @@ max_history_entries = 1000
 max_conflicts = 100
 include_completed_todos_in_context = false
 
+[local_rag]
+enabled = true
+database = "data/jarvis_rag.db"
+roots = ["documents", "notes", "src"]
+default_collection = "jarvis"
+auto_index_on_startup = false
+max_file_bytes = 10485760
+chunk_characters = 1800
+chunk_overlap_characters = 240
+max_files = 5000
+max_chunks = 100000
+default_search_limit = 8
+prune_missing = true
+
 [planning]
 enabled = true
 max_steps = 6

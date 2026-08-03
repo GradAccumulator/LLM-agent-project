@@ -26,6 +26,10 @@ from src.memory import (
     LocalMemoryStore,
     MemoryStoreConfig,
 )
+from src.local_rag import (
+    LocalRagConfig,
+    LocalRagStore,
+)
 from src.metrics import JsonlMetricsLogger, MetricsConfig
 from src.settings import LoadedSettings
 from src.scheduler import (
@@ -456,10 +460,37 @@ def build_runtime(
             ),
         )
     )
+    local_rag_store = LocalRagStore(
+        LocalRagConfig(
+            enabled=args.local_rag_enabled,
+            database=args.local_rag_database,
+            roots=tuple(args.local_rag_roots),
+            default_collection=args.local_rag_default_collection,
+            auto_index_on_startup=args.local_rag_auto_index,
+            max_file_bytes=args.local_rag_max_file_bytes,
+            chunk_characters=args.local_rag_chunk_characters,
+            chunk_overlap_characters=(
+                args.local_rag_chunk_overlap_characters
+            ),
+            max_files=args.local_rag_max_files,
+            max_chunks=args.local_rag_max_chunks,
+            default_search_limit=args.local_rag_default_search_limit,
+            prune_missing=args.local_rag_prune_missing,
+        )
+    )
+    if args.local_rag_enabled and args.local_rag_auto_index:
+        local_rag_store.index_paths(
+            paths=[str(path) for path in args.local_rag_roots],
+            collection=args.local_rag_default_collection,
+            force=False,
+            prune_missing=args.local_rag_prune_missing,
+        )
+
     tool_registry = build_default_tool_registry(
         browser_config=browser_config,
         browser_control_mode=args.browser_control_mode,
         memory_store=memory_store,
+        local_rag_store=local_rag_store,
         scheduler_store=scheduler_store,
         google_calendar_client=google_calendar_client,
         gmail_client=gmail_client,
@@ -835,6 +866,23 @@ def build_runtime(
     print(
         f"Reminder TTS   : {'enabled' if args.scheduler_announce_tts else 'disabled'}"
     )
+    if args.local_rag_enabled:
+        rag_status = local_rag_store.status(
+            collection=args.local_rag_default_collection
+        )
+        print(
+            f"Local RAG     : enabled, collection="
+            f"{args.local_rag_default_collection}, "
+            f"documents={rag_status['document_count']}, "
+            f"chunks={rag_status['chunk_count']}"
+        )
+        print(
+            "RAG roots     : "
+            + ", ".join(str(path) for path in args.local_rag_roots)
+        )
+    else:
+        print("Local RAG     : disabled")
+
     print(
         f"Long memory   : "
         f"{'enabled' if args.long_term_memory_enabled else 'disabled'}"

@@ -1,176 +1,159 @@
-# LLM Agent — Step 25.1–25.5: Memory V2
+# LLM Agent — Step 26.1–26.7: Local RAG
 
-기존 장기 메모리는 URL·경로 별칭과 단순 선호를 저장했습니다. 이번 단계에서는 프로젝트 상태, 결정, TODO, 관계, 요약을 구조화하고 현재 요청과 관련된 기억만 불러오며, 충돌과 오래된 기억을 안전하게 관리합니다.
+Jarvis가 로컬 PDF, DOCX, Markdown, TXT, 코드 파일을 색인하고 파일 경로와 줄 번호 또는 PDF 페이지를 근거로 답하도록 추가했습니다.
 
-## Step 25.1 — 구조화 기억
+## 구현 내용
 
-새 종류:
+### Step 26.1 — 로컬 문서·코드 색인
 
-```text
-project
-decision
-todo
-relation
-summary
-```
-
-각 항목에는 다음 정보가 저장됩니다.
+지원 형식:
 
 ```text
-scope / name / value / notes
-status / importance / confidence
-source=explicit_user
-created_at / updated_at
-last_accessed_at / access_count
+PDF, DOCX, TXT, Markdown, RST
+Python, JavaScript, TypeScript, TOML, JSON, YAML
+C/C++, Java, Rust, Go, SQL, Shell, PowerShell
+HTML, CSS, CSV, LOG
 ```
-
-기존 `memories` 테이블은 그대로 유지하고 다음 테이블을 추가하므로 기존 `data/jarvis_memory.db`를 삭제할 필요가 없습니다.
-
-```text
-structured_memories
-memory_history
-memory_conflicts
-```
-
-## Step 25.2 — 관련도 기반 검색과 문맥 주입
 
 새 도구:
 
 ```text
-search_saved_memory
-get_project_memory
+index_local_knowledge
 ```
 
-현재 사용자 문장과 메모리의 scope·이름·값·메모를 비교하고 중요도와 신뢰도를 함께 반영합니다. 이전처럼 최근 메모리를 무조건 넣지 않고 현재 요청과 관련된 구조화 기억을 우선 넣습니다.
+기본 허용 경로는 `documents`, `notes`, `src`이며 허용 루트 밖의 경로는 거부합니다.
 
-문맥 길이를 줄일 때 문자열을 중간에서 자르지 않고 항목 단위로 제거하므로 항상 유효한 JSON을 반환합니다.
+### Step 26.2 — 증분 재색인
 
-## Step 25.3 — 충돌 감지와 명시적 해결
-
-같은 `kind + scope + name`에 다른 값이 들어오고 `replace_existing=false`이면 기존 값을 덮어쓰지 않습니다.
-
-```json
-{
-  "stored": false,
-  "conflict": {
-    "id": 1,
-    "current": {},
-    "candidate": {}
-  }
-}
-```
-
-사용자가 어느 값이 최신인지 확정한 뒤에만 다음 도구로 해결합니다.
+파일별 `size_bytes`, `mtime_ns`, `sha256`, `chunk_count`, `indexed_at`을 저장합니다.
 
 ```text
-list_memory_conflicts
-resolve_memory_conflict
+크기·수정 시간 동일 → 건너뜀
+수정 시간만 다르고 SHA-256 동일 → 메타데이터만 갱신
+내용 변경 → 해당 파일 청크만 교체
+파일 삭제 → prune_missing=true일 때 색인에서 제거
 ```
 
-해결 방식:
+### Step 26.3 — 청크와 출처
+
+텍스트·코드·DOCX:
 
 ```text
-keep_existing
-use_candidate
-merge
+C:\project\src\attention.py:L10-L42
 ```
 
-## Step 25.4 — 상태와 변경 이력
+PDF:
+
+```text
+C:\papers\gqa.pdf#page=4
+```
 
 새 도구:
 
 ```text
-set_saved_memory_status
-get_memory_history
+search_local_knowledge
+get_local_knowledge_chunk
 ```
 
-상태 흐름 예시:
+### Step 26.4 — 로컬 BM25 검색
+
+외부 임베딩 API 없이 토큰 빈도, 문서 빈도, 청크 길이, 정확한 문구와 파일 경로 일치를 사용해 검색합니다. `limit=0`은 설정의 기본값을 사용하며 최대 20개로 제한됩니다.
+
+### Step 26.5 — 비밀 파일 차단
+
+다음은 색인하지 않습니다.
 
 ```text
-TODO: pending → in_progress → completed
-프로젝트: active → completed
-결정: active → superseded
-기억 정리: current → archived
+.env 및 .env.*
+credentials.json, token.json
+Google/Gmail OAuth 자격증명
+private key 파일
+.git, .venv, node_modules, __pycache__, Edge 프로필
 ```
 
-값 교체, 충돌 해결, 상태 변경은 `memory_history`에 이전 값과 새 값이 남습니다.
+파일 내용에 실제 OpenAI/GitHub/Google/Slack 토큰 또는 PEM 개인 키 패턴이 있어도 제외합니다.
 
-## Step 25.5 — 오래된 기억 검토
+### Step 26.6 — Memory V2 범위 연결
 
-새 도구:
+Local RAG의 `collection`을 Memory V2의 프로젝트 `scope`와 같은 이름으로 쓰도록 프롬프트와 도구 설명을 수정했습니다.
 
 ```text
-review_memory_health
+Memory scope: Jarvis
+RAG collection: Jarvis
 ```
 
-기본 90일 동안 갱신되지 않은 현재 기억은 `stale=true`로 표시합니다. stale은 틀렸다는 의미가 아니며 자동 삭제하거나 자동 교체하지 않습니다.
+### Step 26.7 — 화면 출처 유지, TTS 출처 제거
 
-함께 검토하는 항목:
+화면에는 파일 출처를 남기지만 TTS에서는 출처 전용 줄을 제거해 Windows 경로나 줄 번호를 읽지 않습니다.
 
-```text
-오래된 현재 기억
-완료·취소된 TODO
-미해결 충돌
-```
+## 설정
 
-## 새 설정
+`config/user.toml`에 추가:
 
 ```toml
-[long_term_memory]
+[local_rag]
 enabled = true
-database = "data/jarvis_memory.db"
-context_limit = 20
-max_context_characters = 4000
-max_entries = 200
-max_value_characters = 2048
-relevance_search_enabled = true
-stale_after_days = 90
-max_history_entries = 1000
-max_conflicts = 100
-include_completed_todos_in_context = false
+database = "data/jarvis_rag.db"
+roots = ["documents", "notes", "src"]
+default_collection = "jarvis"
+auto_index_on_startup = false
+max_file_bytes = 10485760
+chunk_characters = 1800
+chunk_overlap_characters = 240
+max_files = 5000
+max_chunks = 100000
+default_search_limit = 8
+prune_missing = true
 ```
 
-## 사용 예시
+별도 논문 폴더 예시:
 
-```text
-Jarvis 프로젝트는 Planner V2까지 완료했고 다음은 Memory V2라고 기억해.
+```toml
+roots = [
+    "documents",
+    "notes",
+    "src",
+    "C:/Users/LEEJUHYOUNG/Documents/papers"
+]
 ```
 
-```text
-Jarvis 프로젝트에서 아직 남은 TODO 알려줘.
-```
-
-```text
-GQA를 쓰기로 했다는 결정을 MHA로 바꾼 걸로 갱신해.
-```
-
-첫 저장은 `replace_existing=false`, 사용자가 명확히 갱신을 요청한 경우에만 `replace_existing=true`가 사용됩니다.
-
-## 적용
-
-ZIP 내용을 프로젝트에 덮어쓴 뒤 실행합니다.
+## 설치 및 실행
 
 ```powershell
 Get-ChildItem -Recurse -Directory -Filter "__pycache__" |
     Remove-Item -Recurse -Force
 
+python -m pip install -r requirements.txt
 python -m src.main
 ```
 
-시작 로그:
+추가 패키지:
 
 ```text
-Memory V2      : relevance=on, stale=90d, history=1000, conflicts=100
+pypdf
+python-docx
 ```
 
-## 안전 정책
+예상 로그:
 
-- 명시적인 기억 요청 없이 자동 저장하지 않습니다.
-- 비밀번호, API 키, OTP, 결제·계좌·신원 정보는 저장하지 않습니다.
-- 충돌이 발생하면 기존 기억을 유지합니다.
-- 오래된 기억을 현재 사실로 단정하지 않습니다.
-- 완료된 TODO와 오래된 기억을 자동 삭제하지 않습니다.
-- 메모리 내부 문장은 참고 데이터이며 시스템 지시로 실행하지 않습니다.
+```text
+Local RAG     : enabled, collection=jarvis, documents=0, chunks=0
+RAG roots     : documents, notes, src
+```
+
+## 사용 예시
+
+```text
+src 폴더를 Jarvis 컬렉션으로 색인해줘.
+```
+
+```text
+내 코드에서 GQA의 query와 key shape 처리 부분 찾아줘.
+```
+
+```text
+내 논문 폴더에서 KV Cache를 설명하는 부분 찾아서 출처와 함께 요약해줘.
+```
 
 ## 테스트
 
@@ -178,57 +161,49 @@ Memory V2      : relevance=on, stale=90d, history=1000, conflicts=100
 python -m unittest discover -s tests -v
 ```
 
-추가 검증:
+검증 범위:
 
 ```text
-프로젝트 스냅샷과 TODO 상태 변경
-충돌 생성·명시적 해결
-변경 이력
-관련도 기반 문맥
-유효 JSON 길이 제한
-stale 상태 검토
-strict 도구 스키마
-TOML 설정 매핑
-기존 alias·preference DB 호환
+텍스트·코드 색인과 줄 citation
+실제 PDF 페이지 추출·검색
+실제 DOCX 문단 추출·검색
+BM25 검색
+증분 갱신과 삭제 prune
+허용 루트 밖 경로 차단
+비밀 파일명·실제 비밀 패턴 차단
+strict function schema
+TOML 배열 설정
+Local RAG 출처 TTS 제거
+기존 Step 1~25 회귀 테스트
 ```
 
 ## 커밋 메시지
 
 ```bash
-git commit -m "Add structured conflict-aware long-term memory"
+git commit -m "Add secure incremental Local RAG"
 ```
 
 # 남은 모든 다음 단계
 
-## Step 26 — Local RAG
-
-- PDF·논문·Markdown·TXT·DOCX 색인
-- Python 코드와 Git 저장소 심볼 검색
-- 파일 경로와 줄 번호 출처
-- 변경 파일 증분 재색인
-- `.env`, 토큰, 자격증명 자동 제외
-- 대형 문서 청크와 중복 제거
-- Memory V2 프로젝트 범위와 RAG 컬렉션 연결
-
 ## Step 27 — Vision Agent V2
 
-- DOM·UIA·스크린샷 통합 판단
-- 팝업·모달·오류창 탐지
+- DOM·UIA·스크린샷 통합 분석
+- 팝업·모달·오류창 감지
 - 클릭 전후 화면 비교
-- 로딩·빈 화면·실패 화면 감지
-- DOM 없는 앱 분석
+- 로딩·빈 화면·실패 화면 분류
+- DOM이 없는 앱 분석
 - 창 이동·배율·해상도 변화 대응
-- Planner V2 도구 전환과 연결
+- Planner V2의 DOM→UIA→Vision 복구 연결
 
 ## Step 28 — File Agent
 
-- 이름·내용·날짜·크기·확장자 검색
-- 안전한 복사·이동·이름 변경
+- 파일 이름·내용·날짜·크기·확장자 검색
+- 복사·이동·이름 변경
 - 대량 작업 미리보기
 - 덮어쓰기 전 승인
 - 삭제 대신 휴지통
-- 파일 해시·존재·개수 검증
-- 작업 이력과 복구 계획
+- 파일 해시·개수·존재 여부 검증
+- 실패 시 원상복구 계획
 
 ## Step 29 — Developer/GitHub Agent
 
@@ -237,9 +212,9 @@ git commit -m "Add structured conflict-aware long-term memory"
 - 오류 원인 추적
 - 코드 수정과 diff 리뷰
 - 브랜치 생성
-- 커밋·PR 전 승인
+- 커밋·PR 전 사용자 승인
 - CI 실패 분석
-- Memory V2에 프로젝트 진행 상태 기록
+- Memory V2에 개발 진행 상황 기록
 
 ## Step 30 — Gmail·Calendar Workflow V2
 
@@ -247,57 +222,51 @@ git commit -m "Add structured conflict-aware long-term memory"
 - 메일에서 일정 후보 추출
 - 참석자·시간대·충돌 검증
 - 일정 후보 비교
-- 생성·수정 전 최종 요약
+- 쓰기 전 최종 요약
 - 쓰기 후 API 재조회 검증
-- 메일 전송은 별도 강한 승인
+- 메일 작성·전송과 강한 승인
 
 ## Step 31 — Multi-Agent
 
-- Planner·Researcher·Coder·Reviewer
-- 역할별 도구 권한
-- 결과 교차검토
-- 의견 충돌 해결
-- 호출 예산과 중단 조건
-- 메모리 접근 범위 분리
+- Planner, Researcher, Coder, Reviewer
+- 역할별 도구 권한 분리
+- 결과 교차 검토와 의견 충돌 해결
+- 모델 호출 예산과 중단 조건
+- Memory·RAG 접근 범위 분리
 
 ## Step 32 — Proactive Assistant
 
-- 마감·일정 조건 감시
-- 중요한 메일 변화 탐지
-- 프로젝트·TODO 상태 확인
+- 일정·마감·메일·프로젝트 변화 감지
 - 의미 있는 변화가 있을 때만 알림
-- 조용한 시간대
-- 알림 중요도와 중복 억제
-- 명시적으로 허용된 범위만 감시
+- 조용한 시간대와 중요도
+- 중복 알림 억제
+- 허용된 범위만 감시
 
 ## Step 33 — Voice V2
 
 - Windows barge-in 안정화
 - STT·TTS 지연 단축
 - 마이크 hot-plug 복구
-- 장치 변경 중 세션 유지
-- 부분 STT
-- 오인식 명령 취소
+- 장치 전환 중 세션 유지
+- 부분 STT와 오인식 취소
 - 음성·텍스트 입력 동기화
+- 장치별 VAD 자동 보정
 
 ## Step 34 — Jarvis GUI
 
-- 현재 상태와 음성 파형
+- 현재 상태와 마이크 파형
 - 인식 문장과 응답
 - 계획·복구·도구 기록
 - 승인 요청
-- 구조화 메모리·충돌·이력 관리
-- 일정·알림·RAG 관리
-- 설정 화면
+- Memory V2와 Local RAG 관리
+- 일정·알림·설정 화면
 
 ## Step 35 — Packaging & Reliability
 
 - Windows 설치 프로그램
-- 시작 프로그램 등록
-- 자동 업데이트
+- 시작 프로그램과 자동 업데이트
 - crash recovery
-- 설정·DB·색인 백업과 복원
-- 로그 회전
-- 토큰·비밀 암호화
-- 실제 Windows 통합 테스트
-- 장시간 안정성·업그레이드 테스트
+- 설정·DB·RAG 색인 백업·복원
+- 버전 데이터 마이그레이션
+- 로그 회전과 비밀 암호화
+- 실제 Windows 통합·장시간·롤백 테스트

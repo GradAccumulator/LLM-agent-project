@@ -33,6 +33,19 @@ def _as_path(value: Any) -> Path:
     return Path(value)
 
 
+def _as_path_list(value: Any) -> tuple[Path, ...]:
+    if not isinstance(value, list):
+        raise ConfigError("Path list values must be TOML arrays.")
+    paths: list[Path] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise ConfigError("Every path list item must be a TOML string.")
+        paths.append(Path(item))
+    if not paths:
+        raise ConfigError("Path lists must contain at least one item.")
+    return tuple(paths)
+
+
 def _as_optional_path(value: Any) -> Path | None:
     if not isinstance(value, str):
         raise ConfigError(
@@ -436,6 +449,24 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
         "max_message_characters": _SettingSpec("scheduler_max_message_characters", int, _as_int),
         "announce_with_tts": _SettingSpec("scheduler_announce_tts", bool),
         "max_announcements_per_cycle": _SettingSpec("scheduler_max_announcements", int, _as_int),
+    },
+    "local_rag": {
+        "enabled": _SettingSpec("local_rag_enabled", bool),
+        "database": _SettingSpec("local_rag_database", str, _as_path),
+        "roots": _SettingSpec("local_rag_roots", list, _as_path_list),
+        "default_collection": _SettingSpec("local_rag_default_collection", str),
+        "auto_index_on_startup": _SettingSpec("local_rag_auto_index", bool),
+        "max_file_bytes": _SettingSpec("local_rag_max_file_bytes", int, _as_int),
+        "chunk_characters": _SettingSpec("local_rag_chunk_characters", int, _as_int),
+        "chunk_overlap_characters": _SettingSpec(
+            "local_rag_chunk_overlap_characters", int, _as_int
+        ),
+        "max_files": _SettingSpec("local_rag_max_files", int, _as_int),
+        "max_chunks": _SettingSpec("local_rag_max_chunks", int, _as_int),
+        "default_search_limit": _SettingSpec(
+            "local_rag_default_search_limit", int, _as_int
+        ),
+        "prune_missing": _SettingSpec("local_rag_prune_missing", bool),
     },
     "long_term_memory": {
         "enabled": _SettingSpec(

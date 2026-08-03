@@ -863,6 +863,55 @@ def build_parser(
 
     _bool_pair(
         parser,
+        destination="local_rag_enabled",
+        positive=("--local-rag",),
+        negative=("--disable-local-rag",),
+        positive_help="Enable local document and code retrieval.",
+        negative_help="Disable Local RAG indexing and search tools.",
+    )
+    parser.add_argument(
+        "--local-rag-database",
+        type=Path,
+        default=Path("data/jarvis_rag.db"),
+    )
+    parser.add_argument(
+        "--local-rag-roots",
+        dest="local_rag_roots",
+        nargs="+",
+        type=Path,
+        default=(Path("documents"), Path("notes"), Path("src")),
+    )
+    parser.add_argument(
+        "--local-rag-default-collection",
+        default="jarvis",
+    )
+    _bool_pair(
+        parser,
+        destination="local_rag_auto_index",
+        positive=("--local-rag-auto-index",),
+        negative=("--local-rag-no-auto-index",),
+        positive_help="Incrementally index configured roots during startup.",
+        negative_help="Do not scan Local RAG roots during startup.",
+    )
+    parser.add_argument("--local-rag-max-file-bytes", type=int, default=10485760)
+    parser.add_argument("--local-rag-chunk-characters", type=int, default=1800)
+    parser.add_argument(
+        "--local-rag-chunk-overlap-characters", type=int, default=240
+    )
+    parser.add_argument("--local-rag-max-files", type=int, default=5000)
+    parser.add_argument("--local-rag-max-chunks", type=int, default=100000)
+    parser.add_argument("--local-rag-default-search-limit", type=int, default=8)
+    _bool_pair(
+        parser,
+        destination="local_rag_prune_missing",
+        positive=("--local-rag-prune-missing",),
+        negative=("--local-rag-keep-missing",),
+        positive_help="Remove missing files from the Local RAG index.",
+        negative_help="Keep missing file records until explicitly reindexed.",
+    )
+
+    _bool_pair(
+        parser,
         destination="long_term_memory_enabled",
         positive=("--long-term-memory",),
         negative=("--disable-long-term-memory",),
@@ -1227,6 +1276,9 @@ def build_parser(
         google_calendar_open_browser=True,
         scheduler_enabled=True,
         scheduler_announce_tts=True,
+        local_rag_enabled=True,
+        local_rag_auto_index=False,
+        local_rag_prune_missing=True,
         long_term_memory_enabled=True,
         memory_relevance_search=True,
         memory_include_completed_todos=False,

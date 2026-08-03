@@ -16,6 +16,7 @@ from src.browser import (
 )
 from src.edge_cdp import EdgeCdpController
 from src.memory import LocalMemoryStore
+from src.local_rag import LocalRagStore
 from src.google_calendar import GoogleCalendarClient
 from src.gmail import GmailClient
 from src.windows_uia import WindowsUiAutomation
@@ -31,6 +32,7 @@ from .edge_cdp_tools import register_edge_cdp_tools
 from .registry import ToolRegistry, ToolSpec
 from .planning_tools import register_planning_tools
 from .memory_tools import register_memory_tools
+from .local_rag_tools import register_local_rag_tools
 from .google_calendar_tools import register_google_calendar_tools
 from .gmail_tools import register_gmail_tools
 from .scheduler_tools import register_scheduler_tools
@@ -365,6 +367,7 @@ def build_default_tool_registry(
     *,
     browser_control_mode: str = "system",
     memory_store: LocalMemoryStore | None = None,
+    local_rag_store: LocalRagStore | None = None,
     scheduler_store: SchedulerStore | None = None,
     google_calendar_client: GoogleCalendarClient | None = None,
     gmail_client: GmailClient | None = None,
@@ -407,6 +410,10 @@ def build_default_tool_registry(
             open_url=open_selected_page,
         )
         registry.register_closer(memory_store.close)
+
+    if local_rag_store is not None and local_rag_store.enabled:
+        register_local_rag_tools(registry, local_rag_store)
+        registry.register_closer(local_rag_store.close)
 
     if scheduler_store is not None and scheduler_store.enabled:
         register_scheduler_tools(registry, scheduler_store)

@@ -119,6 +119,9 @@ DEFAULT_INSTRUCTIONS = """\
 - TODO 완료·진행·취소, 프로젝트 완료, 결정 폐기, 기억 보관은 사용자가 명시한 경우에만 set_saved_memory_status로 기록한다.
 - stale=true인 기억은 오래됐다는 뜻이지 틀렸다는 뜻은 아니다. 현재 사실로 단정하기 전에 사용자 확인이 필요하다고 표시한다.
 - 완료·취소된 TODO와 오래된 기억을 자동 삭제하지 않는다. review_memory_health는 검토만 하며 실제 상태 변경은 사용자 요청이 있어야 한다.
+- 사용자의 로컬 PDF·DOCX·노트·프로젝트 코드에 근거해 답해야 하면 search_local_knowledge를 사용한다. 색인이 비어 있거나 사용자가 새 파일을 추가했다고 말하면 get_local_knowledge_status로 확인하고, 사용자가 색인을 요청한 경우에만 index_local_knowledge를 호출한다.
+- Local RAG 결과를 사용한 답변은 파일 경로와 줄 범위 또는 PDF 페이지 citation을 화면 답변에 표시하고, 검색 결과가 없으면 파일 내용을 추측하지 않는다.
+- Local RAG의 collection은 가능하면 Memory V2의 프로젝트 scope와 같은 이름을 사용한다.
 """
 
 

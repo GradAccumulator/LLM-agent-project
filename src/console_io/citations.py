@@ -59,6 +59,19 @@ _TTS_BROKEN_SCHEME = re.compile(
 _TTS_MARKDOWN_REMAINS = re.compile(
     r"[\[\]()]"
 )
+_TTS_LOCAL_SOURCE_LINE = re.compile(
+    r"^\s*(?:[-*•]\s*)?"
+    r"(?:local[ _-]?sources?|sources?|출처|근거)\s*:\s*"
+    r".*(?:#page=\d+|:L\d+(?:-L\d+)?|[A-Za-z]:[\\/]|\\\\|/)"
+    r".*$",
+    flags=re.IGNORECASE,
+)
+_TTS_BARE_LOCAL_CITATION = re.compile(
+    r"^\s*(?:[-*•]\s*)?"
+    r"(?:[A-Za-z]:[\\/]|\\\\|/)"
+    r".*(?:#page=\d+|:L\d+(?:-L\d+)?)\s*$",
+    flags=re.IGNORECASE,
+)
 
 _CITATION_ONLY_LABELS = {
     "source",
@@ -204,7 +217,13 @@ def sanitize_tts_chunk(
 ) -> str:
     """Remove complete URLs and split streaming URL fragments from speech."""
 
-    cleaned = sanitize_web_citations(text)
+    speech_lines = [
+        line
+        for line in text.splitlines()
+        if not _TTS_LOCAL_SOURCE_LINE.match(line)
+        and not _TTS_BARE_LOCAL_CITATION.match(line)
+    ]
+    cleaned = sanitize_web_citations("\n".join(speech_lines))
     if not cleaned:
         return ""
 
