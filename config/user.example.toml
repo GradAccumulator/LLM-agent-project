@@ -113,3 +113,11 @@ enabled = true
 timeout_seconds = 60.0
 high_risk_code_digits = 4
 max_code_attempts = 3
+
+
+[windows_uia]
+enabled = true
+backend = "uia"
+element_ttl_seconds = 180.0
+max_elements = 200
+allow_actions = true

@@ -15,6 +15,7 @@ from src.llm import AgentConfig, JarvisAgent
 from src.google_calendar import GoogleCalendarClient, GoogleCalendarConfig
 from src.gmail import GmailClient, GmailConfig
 from src.confirmation import ConfirmationConfig
+from src.windows_uia import WindowsUiAutomation, WindowsUiAutomationConfig
 from src.memory import (
     LocalMemoryStore,
     MemoryStoreConfig,
@@ -228,6 +229,16 @@ def build_runtime(
             args.browser_max_page_text
         ),
     )
+    windows_uia = WindowsUiAutomation(
+        WindowsUiAutomationConfig(
+            enabled=args.windows_uia_enabled,
+            backend=args.windows_uia_backend,
+            element_ttl_seconds=args.windows_uia_element_ttl,
+            max_elements=args.windows_uia_max_elements,
+            allow_actions=args.windows_uia_allow_actions,
+        )
+    )
+
     gmail_client = GmailClient(
         GmailConfig(
             enabled=args.gmail_enabled,
@@ -296,6 +307,7 @@ def build_runtime(
         scheduler_store=scheduler_store,
         google_calendar_client=google_calendar_client,
         gmail_client=gmail_client,
+        windows_uia=windows_uia,
         confirmation_config=(
             ConfirmationConfig(
                 enabled=(
@@ -520,6 +532,14 @@ def build_runtime(
     print(
         f"TTS output     : "
         f"{'enabled' if args.tts_enabled else 'disabled'}"
+    )
+    print(
+        f"Windows UIA    : "
+        f"{'enabled' if args.windows_uia_enabled else 'disabled'} / "
+        f"{'actions' if args.windows_uia_allow_actions else 'read-only'}"
+    )
+    print(
+        f"UIA ref TTL    : {args.windows_uia_element_ttl:.0f}s"
     )
     print(
         f"Confirmation   : "

@@ -175,6 +175,19 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
             "tts_mixer_buffer", int, _as_int
         ),
     },
+    "windows_uia": {
+        "enabled": _SettingSpec("windows_uia_enabled", bool),
+        "backend": _SettingSpec("windows_uia_backend", str),
+        "element_ttl_seconds": _SettingSpec(
+            "windows_uia_element_ttl", (int, float), _as_float
+        ),
+        "max_elements": _SettingSpec(
+            "windows_uia_max_elements", int, _as_int
+        ),
+        "allow_actions": _SettingSpec(
+            "windows_uia_allow_actions", bool
+        ),
+    },
     "confirmation": {
         "enabled": _SettingSpec(
             "confirmation_enabled", bool

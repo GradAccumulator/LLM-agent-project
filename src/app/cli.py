@@ -356,6 +356,38 @@ def build_parser(
 
     _bool_pair(
         parser,
+        destination="windows_uia_enabled",
+        positive=("--windows-uia",),
+        negative=("--disable-windows-uia",),
+        positive_help="Enable Windows UI Automation inspection.",
+        negative_help="Disable Windows UI Automation.",
+    )
+    _bool_pair(
+        parser,
+        destination="windows_uia_allow_actions",
+        positive=("--windows-uia-actions",),
+        negative=("--disable-windows-uia-actions",),
+        positive_help="Register confirmed UI Automation actions.",
+        negative_help="Keep UI Automation inspection read-only.",
+    )
+    parser.add_argument(
+        "--windows-uia-backend",
+        choices=("uia",),
+        default="uia",
+    )
+    parser.add_argument(
+        "--windows-uia-element-ttl",
+        type=float,
+        default=180.0,
+    )
+    parser.add_argument(
+        "--windows-uia-max-elements",
+        type=int,
+        default=200,
+    )
+
+    _bool_pair(
+        parser,
         destination="confirmation_enabled",
         positive=("--confirmation",),
         negative=("--disable-confirmation",),
@@ -789,6 +821,8 @@ def build_parser(
         web_search_enabled=True,
         web_search_external_access=True,
         tts_enabled=True,
+        windows_uia_enabled=True,
+        windows_uia_allow_actions=True,
         confirmation_enabled=True,
         gmail_enabled=True,
         gmail_open_browser=True,

@@ -37,6 +37,11 @@ ACTION_TOOLS = {
     "google_calendar_create_event",
     "google_calendar_update_event",
     "google_calendar_delete_event",
+    "uia_focus_element",
+    "uia_invoke_element",
+    "uia_set_value",
+    "uia_toggle_element",
+    "uia_select_element",
 }
 
 _SEQUENCE_MARKERS = (
@@ -282,6 +287,57 @@ def verify_action_result(
             "event_id": arguments.get(
                 "event_id"
             ),
+        }
+
+    elif tool_name == "uia_focus_element":
+        verified = payload.get("focused") is True
+        strength = "moderate"
+        evidence = {
+            "focused": payload.get("focused"),
+            "element_ref": payload.get("element_ref"),
+            "name": payload.get("name"),
+        }
+
+    elif tool_name == "uia_invoke_element":
+        verified = payload.get("invoked") is True
+        strength = "acknowledged"
+        evidence = {
+            "invoked": payload.get("invoked"),
+            "element_ref": payload.get("element_ref"),
+            "name": payload.get("name"),
+        }
+
+    elif tool_name == "uia_set_value":
+        verified = (
+            payload.get("value_set") is True
+            and payload.get("verified") is True
+        )
+        strength = "strong"
+        evidence = {
+            "value_set": payload.get("value_set"),
+            "verified": payload.get("verified"),
+            "characters": payload.get("characters"),
+            "element_ref": payload.get("element_ref"),
+        }
+
+    elif tool_name == "uia_toggle_element":
+        verified = (
+            payload.get("toggled") is True
+            and payload.get("verified") is True
+        )
+        strength = "strong"
+        evidence = {
+            "toggled": payload.get("toggled"),
+            "state_before": payload.get("state_before"),
+            "state_after": payload.get("state_after"),
+        }
+
+    elif tool_name == "uia_select_element":
+        verified = payload.get("selected") is True
+        strength = "strong"
+        evidence = {
+            "selected": payload.get("selected"),
+            "element_ref": payload.get("element_ref"),
         }
 
     elif tool_name == "browser_close":

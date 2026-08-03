@@ -17,6 +17,7 @@ from src.browser import (
 from src.memory import LocalMemoryStore
 from src.google_calendar import GoogleCalendarClient
 from src.gmail import GmailClient
+from src.windows_uia import WindowsUiAutomation
 from src.confirmation import (
     ConfirmationConfig,
     ConfirmationRequirement,
@@ -31,6 +32,7 @@ from .memory_tools import register_memory_tools
 from .google_calendar_tools import register_google_calendar_tools
 from .gmail_tools import register_gmail_tools
 from .scheduler_tools import register_scheduler_tools
+from .windows_uia_tools import register_windows_uia_tools
 from .windows_desktop import (
     focus_window,
     get_active_window,
@@ -367,6 +369,7 @@ def build_default_tool_registry(
     confirmation_config: (
         ConfirmationConfig | None
     ) = None,
+    windows_uia: WindowsUiAutomation | None = None,
 ) -> ToolRegistry:
     registry = ToolRegistry(
         memory_store=memory_store,
@@ -817,6 +820,10 @@ def build_default_tool_registry(
     if gmail_client is not None and gmail_client.enabled:
         register_gmail_tools(registry, gmail_client)
         registry.register_closer(gmail_client.close)
+
+    if windows_uia is not None and windows_uia.enabled:
+        register_windows_uia_tools(registry, windows_uia)
+        registry.register_closer(windows_uia.close)
 
     register_browser_tools(registry, browser_controller)
     registry.register_closer(browser_controller.close)

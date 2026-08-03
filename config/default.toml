@@ -61,6 +61,13 @@ mixer_buffer = 256
 
 
 
+[windows_uia]
+enabled = true
+backend = "uia"
+element_ttl_seconds = 180.0
+max_elements = 200
+allow_actions = true
+
 [confirmation]
 enabled = true
 timeout_seconds = 60.0
