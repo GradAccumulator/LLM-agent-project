@@ -188,6 +188,17 @@ def _device_key(
     )
 
 
+def _probe_callback(
+    indata: np.ndarray,
+    frames: int,
+    time_info: object,
+    status: object,
+) -> None:
+    """Minimal callback used only to verify stream openability."""
+
+    del indata, frames, time_info, status
+
+
 def _check_device(
     device: int | str,
     info: dict[str, Any],
@@ -216,6 +227,13 @@ def _check_device(
 
     stream = None
     try:
+        # InputStream without a callback selects PortAudio's
+        # blocking API. Some WDM-KS input devices support callback
+        # streams but reject blocking streams with:
+        # "Blocking API not supported yet".
+        #
+        # The real Jarvis stream is callback-based, so probe using the
+        # same API and core parameters.
         stream = sd.InputStream(
             device=device,
             samplerate=sample_rate,
@@ -229,6 +247,7 @@ def _check_device(
                     / 1_000
                 ),
             ),
+            callback=_probe_callback,
         )
         stream.start()
         stream.stop()

@@ -613,7 +613,7 @@ def build_runtime(
         f"Audio recovery : "
         f"{'enabled' if args.audio_device_recovery else 'disabled'}"
         f" / probe="
-        f"{'on' if args.audio_probe_devices else 'off'}"
+        f"{'callback' if args.audio_probe_devices else 'off'}"
     )
     print(
         f"Capture rate   : "
