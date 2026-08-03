@@ -41,7 +41,7 @@ class MemoryAgentContextTests(unittest.TestCase):
             agent._request_instructions = ''
 
             agent._prepare_request(
-                '오늘 뉴스 알려줘'
+                '구글 검색 설정으로 오늘 뉴스 알려줘'
             )
 
             self.assertIn(

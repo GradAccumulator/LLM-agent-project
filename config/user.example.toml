@@ -79,6 +79,11 @@ context_limit = 20
 max_context_characters = 4000
 max_entries = 200
 max_value_characters = 2048
+relevance_search_enabled = true
+stale_after_days = 90
+max_history_entries = 1000
+max_conflicts = 100
+include_completed_todos_in_context = false
 
 [scheduler]
 enabled = true

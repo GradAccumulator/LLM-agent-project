@@ -894,6 +894,45 @@ def build_parser(
         type=int,
         default=2048,
     )
+    _bool_pair(
+        parser,
+        destination="memory_relevance_search",
+        positive=("--memory-relevance-search",),
+        negative=("--disable-memory-relevance-search",),
+        positive_help=(
+            "Retrieve long-term memories by current-request relevance."
+        ),
+        negative_help=(
+            "Inject recent long-term memories without relevance ranking."
+        ),
+    )
+    parser.add_argument(
+        "--memory-stale-after-days",
+        type=int,
+        default=90,
+    )
+    parser.add_argument(
+        "--memory-max-history-entries",
+        type=int,
+        default=1000,
+    )
+    parser.add_argument(
+        "--memory-max-conflicts",
+        type=int,
+        default=100,
+    )
+    _bool_pair(
+        parser,
+        destination="memory_include_completed_todos",
+        positive=("--memory-include-completed-todos",),
+        negative=("--memory-hide-completed-todos",),
+        positive_help=(
+            "Include completed TODO memories in automatic context."
+        ),
+        negative_help=(
+            "Exclude completed TODO memories from automatic context."
+        ),
+    )
 
     _bool_pair(
         parser,
@@ -1189,6 +1228,8 @@ def build_parser(
         scheduler_enabled=True,
         scheduler_announce_tts=True,
         long_term_memory_enabled=True,
+        memory_relevance_search=True,
+        memory_include_completed_todos=False,
         planning_enabled=True,
         planning_tool_switching=True,
         streaming_enabled=True,

@@ -456,6 +456,21 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
         "max_value_characters": _SettingSpec(
             "memory_max_value_characters", int, _as_int
         ),
+        "relevance_search_enabled": _SettingSpec(
+            "memory_relevance_search", bool
+        ),
+        "stale_after_days": _SettingSpec(
+            "memory_stale_after_days", int, _as_int
+        ),
+        "max_history_entries": _SettingSpec(
+            "memory_max_history_entries", int, _as_int
+        ),
+        "max_conflicts": _SettingSpec(
+            "memory_max_conflicts", int, _as_int
+        ),
+        "include_completed_todos_in_context": _SettingSpec(
+            "memory_include_completed_todos", bool
+        ),
     },
     "planning": {
         "enabled": _SettingSpec(

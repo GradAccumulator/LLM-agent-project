@@ -439,6 +439,21 @@ def build_runtime(
             max_value_characters=(
                 args.memory_max_value_characters
             ),
+            relevance_search_enabled=(
+                args.memory_relevance_search
+            ),
+            stale_after_days=(
+                args.memory_stale_after_days
+            ),
+            max_history_entries=(
+                args.memory_max_history_entries
+            ),
+            max_conflicts=(
+                args.memory_max_conflicts
+            ),
+            include_completed_todos_in_context=(
+                args.memory_include_completed_todos
+            ),
         )
     )
     tool_registry = build_default_tool_registry(
@@ -827,6 +842,13 @@ def build_runtime(
     print(
         f"Memory DB      : {args.memory_database} "
         f"({memory_store.count()} item(s))"
+    )
+    print(
+        f"Memory V2      : relevance="
+        f"{'on' if args.memory_relevance_search else 'off'}, "
+        f"stale={args.memory_stale_after_days}d, "
+        f"history={args.memory_max_history_entries}, "
+        f"conflicts={args.memory_max_conflicts}"
     )
     print(
         f"Task planning  : "
