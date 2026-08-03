@@ -138,6 +138,44 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
         ),
         "vision_detail": _SettingSpec("vision_detail", str),
     },
+    "model_routing": {
+        "enabled": _SettingSpec(
+            "model_routing_enabled", bool
+        ),
+        "balanced_model": _SettingSpec(
+            "routing_balanced_model", str
+        ),
+        "strong_model": _SettingSpec(
+            "routing_strong_model", str
+        ),
+        "balanced_reasoning": _SettingSpec(
+            "routing_balanced_reasoning", str
+        ),
+        "strong_reasoning": _SettingSpec(
+            "routing_strong_reasoning", str
+        ),
+        "allow_user_override": _SettingSpec(
+            "routing_allow_user_override", bool
+        ),
+        "allow_automatic_escalation": _SettingSpec(
+            "routing_allow_automatic", bool
+        ),
+        "max_delegations_per_turn": _SettingSpec(
+            "routing_max_delegations", int, _as_int
+        ),
+        "max_input_characters": _SettingSpec(
+            "routing_max_input_characters", int, _as_int
+        ),
+        "max_output_tokens": _SettingSpec(
+            "routing_max_output_tokens", int, _as_int
+        ),
+        "timeout_seconds": _SettingSpec(
+            "routing_timeout", (int, float), _as_float
+        ),
+        "fallback_to_default": _SettingSpec(
+            "routing_fallback", bool
+        ),
+    },
     "web_search": {
         "enabled": _SettingSpec(
             "web_search_enabled", bool

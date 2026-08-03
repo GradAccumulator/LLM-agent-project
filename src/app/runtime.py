@@ -1016,6 +1016,45 @@ class VoiceAssistantRuntime:
 
         self._print_web_sources(reply)
 
+        for delegation in reply.model_delegations:
+            mode = (
+                "explicit"
+                if delegation.explicit
+                else "automatic"
+            )
+            status = (
+                "success"
+                if delegation.success
+                else "failed"
+            )
+            print(
+                "MODEL ROUTE: "
+                f"{reply.model} -> "
+                f"{delegation.model} "
+                f"[{delegation.tier.value} | "
+                f"{mode} | {status}]"
+            )
+            print(
+                f"DELEGATED: {delegation.task_preview}"
+            )
+            print(
+                f"REASON: {delegation.reason}"
+            )
+            delegated_usage = format_token_usage(
+                delegation.input_tokens,
+                delegation.output_tokens,
+            )
+            print(
+                "DELEGATE META: "
+                f"reasoning={delegation.reasoning_effort} "
+                f"| total={delegation.elapsed_seconds:.2f}s "
+                f"| {delegated_usage}"
+            )
+            if delegation.error:
+                print(
+                    f"DELEGATE ERROR: {delegation.error}"
+                )
+
         usage_text = format_token_usage(
             reply.input_tokens,
             reply.output_tokens,
@@ -1031,6 +1070,7 @@ class VoiceAssistantRuntime:
             f"total={reply.elapsed_seconds:.2f}s | "
             f"{usage_text} | "
             f"tools={len(reply.tool_calls)} | "
+            f"delegates={len(reply.model_delegations)} | "
             f"web={reply.web_search_calls}]"
         )
 
@@ -1067,6 +1107,21 @@ class VoiceAssistantRuntime:
                 ),
                 "total_tokens": reply.total_tokens,
                 "tool_count": len(reply.tool_calls),
+                "model_delegation_count": (
+                    len(reply.model_delegations)
+                ),
+                "model_delegations": [
+                    item.as_dict()
+                    for item in reply.model_delegations
+                ],
+                "delegated_input_tokens": sum(
+                    item.input_tokens or 0
+                    for item in reply.model_delegations
+                ),
+                "delegated_output_tokens": sum(
+                    item.output_tokens or 0
+                    for item in reply.model_delegations
+                ),
                 "confirmation_requests": sum(
                     call.confirmation_required
                     for call in reply.tool_calls

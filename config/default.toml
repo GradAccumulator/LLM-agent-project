@@ -37,6 +37,21 @@ max_tool_rounds = 12
 vision_detail = "original"
 
 
+
+[model_routing]
+enabled = true
+balanced_model = "gpt-5.6-terra"
+strong_model = "gpt-5.6-sol"
+balanced_reasoning = "high"
+strong_reasoning = "xhigh"
+allow_user_override = true
+allow_automatic_escalation = true
+max_delegations_per_turn = 1
+max_input_characters = 20000
+max_output_tokens = 1200
+timeout_seconds = 90.0
+fallback_to_default = true
+
 [web_search]
 # OpenAI Responses API의 hosted web search입니다.
 # 브라우저 창을 열지 않고 OpenAI 서버에서 검색합니다.

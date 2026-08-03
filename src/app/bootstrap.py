@@ -12,6 +12,7 @@ from src.conversation import ConversationConfig, ConversationSession
 from src.console_io import ConsoleTextInput
 from src.fastpath import FastPathConfig, LocalCommandRouter
 from src.llm import AgentConfig, JarvisAgent
+from src.model_routing import ModelRoutingConfig
 from src.google_calendar import GoogleCalendarClient, GoogleCalendarConfig
 from src.gmail import GmailClient, GmailConfig
 from src.confirmation import ConfirmationConfig
@@ -382,6 +383,46 @@ def build_runtime(
             web_search_max_sources=(
                 args.web_search_max_sources
             ),
+            model_routing=(
+                ModelRoutingConfig(
+                    enabled=(
+                        args.model_routing_enabled
+                    ),
+                    balanced_model=(
+                        args.routing_balanced_model
+                    ),
+                    strong_model=(
+                        args.routing_strong_model
+                    ),
+                    balanced_reasoning=(
+                        args.routing_balanced_reasoning
+                    ),
+                    strong_reasoning=(
+                        args.routing_strong_reasoning
+                    ),
+                    allow_user_override=(
+                        args.routing_allow_user_override
+                    ),
+                    allow_automatic_escalation=(
+                        args.routing_allow_automatic
+                    ),
+                    max_delegations_per_turn=(
+                        args.routing_max_delegations
+                    ),
+                    max_input_characters=(
+                        args.routing_max_input_characters
+                    ),
+                    max_output_tokens=(
+                        args.routing_max_output_tokens
+                    ),
+                    timeout_seconds=(
+                        args.routing_timeout
+                    ),
+                    fallback_to_default=(
+                        args.routing_fallback
+                    ),
+                )
+            ),
         ),
         tool_registry=tool_registry,
     )
@@ -487,6 +528,26 @@ def build_runtime(
     print(
         f"LLM reasoning  : "
         f"{args.llm_reasoning}"
+    )
+    print(
+        f"Model routing : "
+        f"{'enabled' if args.model_routing_enabled else 'disabled'}"
+    )
+    print(
+        f"Route balanced: "
+        f"{args.routing_balanced_model} / "
+        f"{args.routing_balanced_reasoning}"
+    )
+    print(
+        f"Route strong  : "
+        f"{args.routing_strong_model} / "
+        f"{args.routing_strong_reasoning}"
+    )
+    print(
+        f"Route policy  : explicit="
+        f"{args.routing_allow_user_override} / automatic="
+        f"{args.routing_allow_automatic} / max="
+        f"{args.routing_max_delegations}"
     )
     print(
         f"LLM memory     : "

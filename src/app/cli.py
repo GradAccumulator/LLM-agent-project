@@ -269,6 +269,97 @@ def build_parser(
 
     _bool_pair(
         parser,
+        destination="model_routing_enabled",
+        positive=("--model-routing",),
+        negative=("--disable-model-routing",),
+        positive_help=(
+            "Enable selective stronger-model delegation."
+        ),
+        negative_help=(
+            "Disable selective stronger-model delegation."
+        ),
+    )
+    parser.add_argument(
+        "--routing-balanced-model",
+        default="gpt-5.6-terra",
+    )
+    parser.add_argument(
+        "--routing-strong-model",
+        default="gpt-5.6-sol",
+    )
+    parser.add_argument(
+        "--routing-balanced-reasoning",
+        choices=(
+            "none", "low", "medium", "high", "xhigh", "max"
+        ),
+        default="high",
+    )
+    parser.add_argument(
+        "--routing-strong-reasoning",
+        choices=(
+            "none", "low", "medium", "high", "xhigh", "max"
+        ),
+        default="xhigh",
+    )
+    _bool_pair(
+        parser,
+        destination="routing_allow_user_override",
+        positive=("--routing-user-override",),
+        negative=("--disable-routing-user-override",),
+        positive_help=(
+            "Honor explicit requests to use a stronger model."
+        ),
+        negative_help=(
+            "Ignore explicit model-escalation phrases."
+        ),
+    )
+    _bool_pair(
+        parser,
+        destination="routing_allow_automatic",
+        positive=("--routing-automatic",),
+        negative=("--disable-routing-automatic",),
+        positive_help=(
+            "Allow the base model to delegate difficult judgments."
+        ),
+        negative_help=(
+            "Allow delegation only when the user explicitly asks."
+        ),
+    )
+    parser.add_argument(
+        "--routing-max-delegations",
+        type=int,
+        default=1,
+    )
+    parser.add_argument(
+        "--routing-max-input-characters",
+        type=int,
+        default=20000,
+    )
+    parser.add_argument(
+        "--routing-max-output-tokens",
+        type=int,
+        default=1200,
+    )
+    parser.add_argument(
+        "--routing-timeout",
+        type=float,
+        default=90.0,
+    )
+    _bool_pair(
+        parser,
+        destination="routing_fallback",
+        positive=("--routing-fallback",),
+        negative=("--disable-routing-fallback",),
+        positive_help=(
+            "Continue with the base model if delegation fails."
+        ),
+        negative_help=(
+            "Fail the delegated judgment if the stronger model fails."
+        ),
+    )
+
+    _bool_pair(
+        parser,
         destination="web_search_enabled",
         positive=("--web-search",),
         negative=("--disable-web-search",),
@@ -818,6 +909,10 @@ def build_parser(
         stt_warmup=True,
         llm_memory=True,
         tools_enabled=True,
+        model_routing_enabled=True,
+        routing_allow_user_override=True,
+        routing_allow_automatic=True,
+        routing_fallback=True,
         web_search_enabled=True,
         web_search_external_access=True,
         tts_enabled=True,

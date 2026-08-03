@@ -1,152 +1,160 @@
-# LLM Agent — Step 21.1–21.3: Windows UI Automation Bundle
+# LLM Agent — Step 21.3.1: Selective Stronger-Model Routing
 
-서로 강하게 연결된 세 단계를 한 번에 구현했습니다.
+기본 모델은 계속 `gpt-5.6-luna`를 사용하면서, **판단이 어려운 부분만**
+`gpt-5.6-terra` 또는 `gpt-5.6-sol`에 위임하는 선택적 라우터를 추가했습니다.
 
-```text
-Step 21.1 — 창 검색과 정확한 window_id 식별
-Step 21.2 — UI Automation 요소 트리 읽기·검색
-Step 21.3 — 승인 기반의 안전한 요소 포커스·실행·입력·토글·선택
-```
-
-## 가능한 명령
+## 작동 방식
 
 ```text
-현재 열린 VSCode 창 찾아줘
-설정 창의 버튼 목록 보여줘
-현재 창에서 이름에 저장이 들어간 버튼 찾아줘
-검색 상자에 파이썬 입력해줘
-다크 모드 토글을 바꿔줘
-일반적인 확인 버튼 눌러줘
+일상 대화·단순 조회·확정된 도구 실행
+→ gpt-5.6-luna가 그대로 처리
+
+복잡한 판단이 필요한 하위 문제
+→ delegate_reasoning에 필요한 문맥만 전달
+→ Terra 또는 Sol이 판단만 수행
+→ Luna가 판단 결과와 로컬 도구 결과를 합쳐 최종 응답
 ```
 
-## 추가된 도구
+상위 모델에는 Calendar, Gmail, Windows UIA, 파일, 브라우저 등의 작업 도구를
+전혀 제공하지 않습니다. 상위 모델은 판단 결과만 반환하며 실제 변경은 기존
+도구와 승인 계층을 통과해야 합니다.
 
-읽기·탐색:
+## 사용자가 직접 요청
+
+다음 표현은 코드에서 명시적 승격 요청으로 감지합니다.
 
 ```text
-uia_find_windows
-uia_inspect_window
-uia_find_elements
-uia_get_element
+이번 건 강한 모델로 판단해줘
+상위 모델로 검토해줘
+Sol로 분석해줘
+더 깊게 생각해줘
+Terra로 검토해줘
 ```
 
-동작:
+명시적 요청은 첫 판단 라운드에서 `delegate_reasoning`을 강제로 한 번 호출합니다.
+기본 모델이 요청을 무시하거나 단순 답변으로 건너뛰지 못합니다.
+
+단순히 다음처럼 모델에 관해 질문하는 것은 승격 요청으로 취급하지 않습니다.
 
 ```text
-uia_focus_element
-uia_invoke_element
-uia_set_value
-uia_toggle_element
-uia_select_element
+강한 모델이 뭐야?
+Sol 모델 가격이 뭐야?
 ```
 
-`uia_focus_element`는 포커스만 옮기며, 나머지 UI 변경 도구는 Step 20 승인 계층을
-거쳐 별도의 `승인` 입력 후에만 실행됩니다.
+## 자동 승격
 
-## 안전 구조
+기본 모델은 다음 상황에서만 `delegate_reasoning`을 선택할 수 있습니다.
 
 ```text
-창 검색
-→ UI 요소 검사
-→ element_ref 발급
-→ 대상 하나로 확정
-→ 변경 작업이면 승인 대기
-→ 승인 후 UI Automation 패턴 실행
-→ 결과 검증
+서로 충돌하는 증거 또는 후보
+복잡한 코드 구조·아키텍처 판단
+중대한 선택에서 높은 불확실성
+도구 실행이 반복해서 실패해 복구 판단이 필요함
+여러 제약을 동시에 만족해야 하는 계획 검토
 ```
 
-임의 화면 좌표 클릭과 무제한 키보드 입력은 사용하지 않습니다. 요소가 Invoke,
-Value, Toggle, SelectionItem 같은 Microsoft UI Automation 패턴을 제공할 때만
-동작합니다.
-
-다음 유형은 차단됩니다.
+다음 작업은 자동 승격 대상이 아닙니다.
 
 ```text
-비밀번호 필드 입력
-삭제·제거·구매·결제·주문·전송·제출·초기화처럼 위험한 이름의 버튼 Invoke
-2000자를 넘는 UI 텍스트 입력
-만료되거나 사라진 요소 참조
+현재 시간
+단순 일정 조회
+읽지 않은 메일 수
+앱 열기
+일상 대화
+이미 확정된 도구 실행
 ```
 
-위험한 UI 작업은 잘못 분류해 실행하는 것보다 이번 단계에서 거절하는 쪽으로
-설계했습니다.
+기본 제한은 요청당 한 번입니다. 상위 모델 호출에는 도구가 없어서 재귀 위임도
+불가능합니다.
 
-## element_ref
+## 위임되는 정보
 
-UI 요소를 검사하면 다음과 같은 임시 참조가 반환됩니다.
+`delegate_reasoning` 입력:
 
 ```text
-uia_a1b2c3d4e5f6
+task             정확한 하위 문제 하나
+relevant_context 필요한 사실·후보·도구 결과만
+reason           상위 모델이 필요한 이유
+target_tier      balanced 또는 strong
+output_format    원하는 결과 형식
 ```
 
-기본 유효 시간은 180초입니다. 창이 갱신되거나 참조가 만료되면 다시 검사합니다.
-프로그램 재시작 시 모든 참조는 사라집니다.
+전체 대화를 자동으로 넘기지 않으며 총 입력 문자는 기본 20,000자로 제한됩니다.
+비밀번호, OTP, API 키, 결제·계좌 정보는 보내지 않도록 시스템 지침에도 명시했습니다.
 
-반환 속성 예:
+## 실패 처리
+
+상위 모델 호출이 실패하면 기본 설정에서는:
 
 ```text
-name
-control_type
-automation_id
-class_name
-enabled
-visible
-offscreen
-focusable
-focused
-password
-bounds
+실패 기록
+→ 실패 사실을 기본 모델에 전달
+→ 기본 모델이 가능한 범위에서 응답
+→ 성공한 것처럼 숨기지 않음
 ```
 
-값은 기본적으로 읽지 않습니다. 사용자가 명시적으로 현재 입력값을 확인해야 할 때만
-`include_value=true`를 사용하며 비밀번호 값은 절대 반환하지 않습니다.
-
-## 설치
+실패 시 전체 요청을 중단하게 만들 수도 있습니다.
 
 ```powershell
-python -m pip install -r requirements.txt
+python -m src.main --disable-routing-fallback
 ```
-
-추가 의존성:
-
-```text
-pywinauto==0.6.9
-```
-
-UI Automation backend를 사용합니다.
 
 ## 설정
 
 ```toml
-[windows_uia]
+[model_routing]
 enabled = true
-backend = "uia"
-element_ttl_seconds = 180.0
-max_elements = 200
-allow_actions = true
+balanced_model = "gpt-5.6-terra"
+strong_model = "gpt-5.6-sol"
+balanced_reasoning = "high"
+strong_reasoning = "xhigh"
+allow_user_override = true
+allow_automatic_escalation = true
+max_delegations_per_turn = 1
+max_input_characters = 20000
+max_output_tokens = 1200
+timeout_seconds = 90.0
+fallback_to_default = true
 ```
 
-읽기 전용으로 실행:
+자동 판단만 끄고 사용자가 직접 요청한 경우에만 사용:
 
 ```powershell
-python -m src.main --disable-windows-uia-actions
+python -m src.main --disable-routing-automatic
 ```
 
-전체 비활성화:
+전체 라우팅 끄기:
 
 ```powershell
-python -m src.main --disable-windows-uia
+python -m src.main --disable-model-routing
 ```
 
-## 한계
+상위 모델 변경:
 
-모든 앱이 Microsoft UI Automation 요소를 완전하게 노출하는 것은 아닙니다.
-특히 자체 렌더링 UI, 게임, 일부 Java UI는 창 프레임만 보이거나 요소가 누락될 수
-있습니다. 그런 경우 좌표를 추측해 클릭하지 않고 `inspect_screen`으로 화면을
-설명한 뒤 지원되지 않는다고 보고합니다.
+```powershell
+python -m src.main `
+  --routing-balanced-model gpt-5.6-terra `
+  --routing-strong-model gpt-5.6-sol
+```
 
-이 환경에서는 Linux 단위 테스트만 실행했으므로 실제 Windows 창, 포커스, UIA
-패턴 호출은 사용자의 PC에서 최종 확인해야 합니다.
+## 콘솔 로그
+
+```text
+MODEL ROUTE: gpt-5.6-luna -> gpt-5.6-sol
+             [strong | explicit | success]
+DELEGATED: 후보 일정 3개 중 제약을 가장 잘 만족하는 시간 판단
+REASON: 제약이 충돌하고 결과가 일정 생성에 영향을 줌
+DELEGATE META: reasoning=xhigh | total=4.82s | 1240→386 tokens
+```
+
+`JARVIS META`에도 위임 횟수가 표시됩니다.
+
+```text
+JARVIS META [gpt-5.6-luna | ... | tools=2 | delegates=1 | web=0]
+```
+
+JSONL metrics에는 모델, 이유, 명시/자동 여부, 지연시간, 입출력 토큰 수, 성공 여부가
+기록됩니다. 전체 위임 문맥은 로그에 저장하지 않고 짧은 task preview만 남깁니다.
 
 ## 테스트
 
@@ -154,23 +162,29 @@ python -m src.main --disable-windows-uia
 python -m unittest discover -s tests -v
 ```
 
+실제 OpenAI API는 단위 테스트에서 호출하지 않습니다. 가짜 Responses API로
+명시적 감지, 강제 tool choice, 문맥 제한, 요청당 횟수 제한, 실패 fallback,
+도구 미제공을 검사합니다.
+
 ## 커밋 메시지
 
 ```bash
-git commit -m "Add safe Windows UI Automation inspection and actions"
+git commit -m "Add selective stronger-model delegation"
 ```
 
-## 다음 단계
+## 다음 묶음
 
-다음 묶음은 **Step 21.4 + 22.1–22.3: 화면 이해와 일반 Edge 탭·DOM 읽기**가
-적절합니다.
+다음은 원래 예정한 다음 작업으로 돌아갑니다.
 
 ```text
-현재 화면과 UIA 요소를 함께 비교
-일반 Edge의 열린 탭 목록 조회
-현재 페이지 본문 읽기·요약
-DOM 요소와 화면 상태 교차 검증
+Step 21.4
+화면 캡처와 UIA 요소 교차 분석
+
+Step 22.1-22.3
+일반 Edge 탭 연결
+탭 조회·전환
+현재 페이지 DOM 본문 읽기·요약
 ```
 
-로그인·결제·양식 제출처럼 결과가 큰 동작은 자동 실행하지 않고 별도 고위험 정책을
-먼저 설계합니다.
+화면과 DOM의 판단이 복잡할 때 이번 단계의 선택적 Sol/Terra 위임을 바로 활용할 수
+있습니다.
