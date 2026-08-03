@@ -87,6 +87,16 @@ tab_ref_ttl_seconds = 300.0
 screenshot_directory = "screenshots"
 allow_tab_close = true
 
+# Jarvis-managed Microsoft Edge
+auto_start = true
+executable_path = ""
+profile_directory = "data/edge_profile"
+startup_timeout_seconds = 15.0
+startup_poll_seconds = 0.2
+startup_url = ""
+restore_last_session = true
+keep_running_on_exit = true
+
 [windows_uia]
 enabled = true
 backend = "uia"

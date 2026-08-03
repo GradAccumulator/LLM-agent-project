@@ -32,3 +32,7 @@ data/google_calendar_token.json.*
 config/gmail_credentials.json
 data/gmail_token.json
 data/gmail_token.json.*
+
+
+# Dedicated Jarvis Edge profile (cookies, sessions, account data)
+data/edge_profile/

@@ -9,6 +9,12 @@ from time import monotonic
 from typing import Any, Callable
 from urllib.parse import urlparse
 
+from .launcher import (
+    ManagedEdgeConfig,
+    ManagedEdgeError,
+    ManagedEdgeLauncher,
+)
+
 
 class EdgeCdpError(RuntimeError):
     pass
@@ -28,6 +34,16 @@ class EdgeCdpConfig:
     tab_ref_ttl_seconds: float = 300.0
     screenshot_directory: Path = Path("screenshots")
     allow_tab_close: bool = True
+    auto_start: bool = True
+    executable_path: Path | None = None
+    profile_directory: Path = Path(
+        "data/edge_profile"
+    )
+    startup_timeout_seconds: float = 15.0
+    startup_poll_seconds: float = 0.2
+    startup_url: str | None = None
+    restore_last_session: bool = True
+    keep_running_on_exit: bool = True
 
     def __post_init__(self) -> None:
         _validate_local_endpoint(self.endpoint_url)
@@ -46,6 +62,15 @@ class EdgeCdpConfig:
         if self.tab_ref_ttl_seconds <= 0:
             raise ValueError(
                 "tab_ref_ttl_seconds must be positive."
+            )
+        if self.startup_timeout_seconds <= 0:
+            raise ValueError(
+                "startup_timeout_seconds must be positive."
+            )
+        if not 0.05 <= self.startup_poll_seconds <= 5:
+            raise ValueError(
+                "startup_poll_seconds must be between "
+                "0.05 and 5 seconds."
             )
 
 
@@ -125,10 +150,57 @@ class EdgeCdpController:
             | None
         ) = None,
         clock: Callable[[], float] = monotonic,
+        managed_launcher: (
+            ManagedEdgeLauncher | None
+        ) = None,
     ) -> None:
         self.config = config
         self._connector = connector
         self._clock = clock
+        self._managed_launcher_explicit = (
+            managed_launcher is not None
+        )
+        self._managed_launcher = (
+            managed_launcher
+            or ManagedEdgeLauncher(
+                ManagedEdgeConfig(
+                    endpoint_url=(
+                        config.endpoint_url
+                    ),
+                    auto_start=(
+                        config.auto_start
+                    ),
+                    executable_path=(
+                        config.executable_path
+                    ),
+                    profile_directory=(
+                        config.profile_directory
+                    ),
+                    startup_timeout_seconds=(
+                        config
+                        .startup_timeout_seconds
+                    ),
+                    startup_poll_seconds=(
+                        config
+                        .startup_poll_seconds
+                    ),
+                    startup_url=(
+                        config.startup_url
+                    ),
+                    restore_last_session=(
+                        config
+                        .restore_last_session
+                    ),
+                    keep_running_on_exit=(
+                        config
+                        .keep_running_on_exit
+                    ),
+                )
+            )
+        )
+        self._last_managed_launch: (
+            dict[str, Any] | None
+        ) = None
         self._playwright: Any | None = None
         self._browser: Any | None = None
         self._selected_ref: str | None = None
@@ -185,6 +257,31 @@ class EdgeCdpController:
             raise
         return playwright, browser
 
+    def start_managed_edge(
+        self,
+    ) -> dict[str, Any]:
+        self._require_enabled()
+        try:
+            self._last_managed_launch = (
+                self._managed_launcher
+                .ensure_running()
+            )
+        except ManagedEdgeError as exc:
+            raise EdgeCdpError(
+                str(exc)
+            ) from exc
+        return dict(
+            self._last_managed_launch
+        )
+
+    def managed_edge_status(
+        self,
+    ) -> dict[str, Any]:
+        return (
+            self._managed_launcher
+            .status()
+        )
+
     def _ensure_connection(self) -> Any:
         self._require_enabled()
         if self._browser is not None:
@@ -197,6 +294,16 @@ class EdgeCdpController:
             if connected:
                 return self._browser
             self._browser = None
+
+        should_auto_start = (
+            self.config.auto_start
+            and (
+                self._connector is None
+                or self._managed_launcher_explicit
+            )
+        )
+        if should_auto_start:
+            self.start_managed_edge()
 
         connector = (
             self._connector
@@ -375,6 +482,9 @@ class EdgeCdpController:
                 ),
                 "tab_count": 0,
                 "error": str(exc),
+                "managed_edge": (
+                    self.managed_edge_status()
+                ),
             }
 
         return {
@@ -388,6 +498,9 @@ class EdgeCdpController:
                 self._selected_ref
             ),
             "error": None,
+            "managed_edge": (
+                self.managed_edge_status()
+            ),
         }
 
     def list_tabs(
@@ -698,3 +811,4 @@ class EdgeCdpController:
             except Exception:
                 pass
         self._playwright = None
+        self._managed_launcher.close()

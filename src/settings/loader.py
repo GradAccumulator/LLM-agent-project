@@ -249,6 +249,42 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
             "edge_cdp_allow_tab_close",
             bool,
         ),
+        "auto_start": _SettingSpec(
+            "edge_cdp_auto_start",
+            bool,
+        ),
+        "executable_path": _SettingSpec(
+            "edge_cdp_executable",
+            str,
+            _as_optional_path,
+        ),
+        "profile_directory": _SettingSpec(
+            "edge_cdp_profile_dir",
+            str,
+            _as_path,
+        ),
+        "startup_timeout_seconds": _SettingSpec(
+            "edge_cdp_start_timeout",
+            (int, float),
+            _as_float,
+        ),
+        "startup_poll_seconds": _SettingSpec(
+            "edge_cdp_start_poll",
+            (int, float),
+            _as_float,
+        ),
+        "startup_url": _SettingSpec(
+            "edge_cdp_startup_url",
+            str,
+        ),
+        "restore_last_session": _SettingSpec(
+            "edge_cdp_restore_session",
+            bool,
+        ),
+        "keep_running_on_exit": _SettingSpec(
+            "edge_cdp_keep_running",
+            bool,
+        ),
     },
     "windows_uia": {
         "enabled": _SettingSpec("windows_uia_enabled", bool),

@@ -87,7 +87,7 @@ def main() -> int:
         finally:
             client.close()
 
-    if args.edge_cdp_status:
+    if args.edge_cdp_status or args.edge_cdp_start:
         from src.edge_cdp import (
             EdgeCdpConfig,
             EdgeCdpController,
@@ -115,12 +115,50 @@ def main() -> int:
                 allow_tab_close=(
                     args.edge_cdp_allow_tab_close
                 ),
+                auto_start=(
+                    args.edge_cdp_auto_start
+                    or args.edge_cdp_start
+                ),
+                executable_path=(
+                    args.edge_cdp_executable
+                ),
+                profile_directory=(
+                    args.edge_cdp_profile_dir
+                ),
+                startup_timeout_seconds=(
+                    args.edge_cdp_start_timeout
+                ),
+                startup_poll_seconds=(
+                    args.edge_cdp_start_poll
+                ),
+                startup_url=(
+                    args.edge_cdp_startup_url
+                    or None
+                ),
+                restore_last_session=(
+                    args.edge_cdp_restore_session
+                ),
+                keep_running_on_exit=(
+                    args.edge_cdp_keep_running
+                ),
             )
         )
         try:
             print(
                 json.dumps(
-                    controller.status(),
+                    (
+                        {
+                            "launch": (
+                                controller
+                                .start_managed_edge()
+                            ),
+                            "status": (
+                                controller.status()
+                            ),
+                        }
+                        if args.edge_cdp_start
+                        else controller.status()
+                    ),
                     ensure_ascii=False,
                     indent=2,
                 )

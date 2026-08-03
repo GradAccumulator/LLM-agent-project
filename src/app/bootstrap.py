@@ -258,8 +258,57 @@ def build_runtime(
             allow_tab_close=(
                 args.edge_cdp_allow_tab_close
             ),
+            auto_start=(
+                args.edge_cdp_auto_start
+            ),
+            executable_path=(
+                args.edge_cdp_executable
+            ),
+            profile_directory=(
+                args.edge_cdp_profile_dir
+            ),
+            startup_timeout_seconds=(
+                args.edge_cdp_start_timeout
+            ),
+            startup_poll_seconds=(
+                args.edge_cdp_start_poll
+            ),
+            startup_url=(
+                args.edge_cdp_startup_url
+                or None
+            ),
+            restore_last_session=(
+                args.edge_cdp_restore_session
+            ),
+            keep_running_on_exit=(
+                args.edge_cdp_keep_running
+            ),
         )
     )
+    if (
+        args.edge_cdp_enabled
+        and args.edge_cdp_auto_start
+    ):
+        try:
+            managed_edge_result = (
+                edge_cdp.start_managed_edge()
+            )
+            print(
+                "Managed Edge   : "
+                + (
+                    "reused"
+                    if managed_edge_result.get(
+                        "already_running"
+                    )
+                    else "started"
+                )
+                + " / ready"
+            )
+        except Exception as exc:
+            print(
+                "Managed Edge   : startup warning - "
+                f"{exc}"
+            )
 
     windows_uia = WindowsUiAutomation(
         WindowsUiAutomationConfig(
@@ -633,6 +682,14 @@ def build_runtime(
         f"Edge CDP       : "
         f"{'enabled' if args.edge_cdp_enabled else 'disabled'} "
         f"({args.edge_cdp_endpoint})"
+    )
+    print(
+        f"Edge profile   : "
+        f"{args.edge_cdp_profile_dir}"
+    )
+    print(
+        f"Edge auto start: "
+        f"{'enabled' if args.edge_cdp_auto_start else 'disabled'}"
     )
     print(
         f"Edge tab close : "

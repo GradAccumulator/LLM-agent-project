@@ -35,6 +35,54 @@ def register_edge_cdp_tools(
         )
     )
 
+    managed_status = getattr(
+        controller,
+        "managed_edge_status",
+        None,
+    )
+    managed_start = getattr(
+        controller,
+        "start_managed_edge",
+        None,
+    )
+    if (
+        callable(managed_status)
+        and callable(managed_start)
+    ):
+        registry.register(
+            ToolSpec(
+                name="edge_cdp_managed_status",
+                description=(
+                    "Jarvis 전용 Edge 프로필, 실행 파일, "
+                    "자동 시작 및 CDP 준비 상태를 확인한다."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": False,
+                },
+                handler=managed_status,
+            )
+        )
+
+        registry.register(
+            ToolSpec(
+                name="edge_cdp_start_managed",
+                description=(
+                    "Jarvis 전용 Edge 프로필을 remote debugging "
+                    "활성 상태로 시작한다. 이미 실행 중이면 재사용한다."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": False,
+                },
+                handler=managed_start,
+            )
+        )
+
     registry.register(
         ToolSpec(
             name="edge_cdp_list_tabs",

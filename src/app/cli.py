@@ -90,6 +90,14 @@ def build_parser(
         help="List reminders stored in the scheduler database.",
     )
     parser.add_argument(
+        "--edge-cdp-start",
+        action="store_true",
+        help=(
+            "Start or reuse the Jarvis-managed Edge profile "
+            "and print its CDP status."
+        ),
+    )
+    parser.add_argument(
         "--edge-cdp-status",
         action="store_true",
         help=(
@@ -494,6 +502,67 @@ def build_parser(
         type=Path,
         default=Path("screenshots"),
     )
+    _bool_pair(
+        parser,
+        destination="edge_cdp_auto_start",
+        positive=("--edge-cdp-auto-start",),
+        negative=("--disable-edge-cdp-auto-start",),
+        positive_help=(
+            "Automatically start the dedicated Jarvis Edge profile."
+        ),
+        negative_help=(
+            "Only attach to an Edge CDP endpoint that is already running."
+        ),
+    )
+    parser.add_argument(
+        "--edge-cdp-executable",
+        type=Path,
+        default=None,
+    )
+    parser.add_argument(
+        "--edge-cdp-profile-dir",
+        type=Path,
+        default=Path("data/edge_profile"),
+    )
+    parser.add_argument(
+        "--edge-cdp-start-timeout",
+        type=float,
+        default=15.0,
+    )
+    parser.add_argument(
+        "--edge-cdp-start-poll",
+        type=float,
+        default=0.2,
+    )
+    parser.add_argument(
+        "--edge-cdp-startup-url",
+        default="",
+    )
+    _bool_pair(
+        parser,
+        destination="edge_cdp_restore_session",
+        positive=("--edge-cdp-restore-session",),
+        negative=("--disable-edge-cdp-restore-session",),
+        positive_help=(
+            "Restore the dedicated Edge profile's previous session."
+        ),
+        negative_help=(
+            "Start the dedicated Edge profile without the restore flag."
+        ),
+    )
+    _bool_pair(
+        parser,
+        destination="edge_cdp_keep_running",
+        positive=("--edge-cdp-keep-running",),
+        negative=("--edge-cdp-stop-on-exit",),
+        positive_help=(
+            "Keep the dedicated Edge process running when Jarvis exits."
+        ),
+        negative_help=(
+            "Terminate only the Edge process launched by this Jarvis run."
+        ),
+    )
+
     _bool_pair(
         parser,
         destination="edge_cdp_allow_tab_close",
@@ -984,6 +1053,9 @@ def build_parser(
         web_search_external_access=True,
         tts_enabled=True,
         edge_cdp_enabled=True,
+        edge_cdp_auto_start=True,
+        edge_cdp_restore_session=True,
+        edge_cdp_keep_running=True,
         edge_cdp_allow_tab_close=True,
         windows_uia_enabled=True,
         windows_uia_allow_actions=True,
@@ -1052,6 +1124,7 @@ def print_effective_config(
         "list_devices",
         "list_browsers",
         "edge_cdp_status",
+        "edge_cdp_start",
         "list_memories",
         "list_tts_voices",
     }
