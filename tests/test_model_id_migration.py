@@ -1,66 +1,114 @@
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
 import unittest
 
 from src.app.cli import parse_args
 from src.model_routing import (
+    ModelRoutingConfig,
     normalize_legacy_model_id,
     normalize_reasoning_for_model,
 )
 
 
-class ModelIdMigrationTests(unittest.TestCase):
-    def test_legacy_ids_are_mapped(self) -> None:
-        self.assertEqual(
-            normalize_legacy_model_id("gpt-5.6-luna")[0],
-            "gpt-5.1",
+class ModelIdConfigurationTests(
+    unittest.TestCase
+):
+    def test_cli_defaults_use_gpt_56_family(
+        self,
+    ) -> None:
+        args, _ = parse_args(
+            ["--print-config"]
         )
         self.assertEqual(
-            normalize_legacy_model_id("gpt-5.6-sol")[0],
-            "gpt-5-pro",
+            args.llm_model,
+            "gpt-5.6-luna",
+        )
+        self.assertEqual(
+            args.routing_balanced_model,
+            "gpt-5.6-terra",
+        )
+        self.assertEqual(
+            args.routing_strong_model,
+            "gpt-5.6-sol",
+        )
+        self.assertEqual(
+            args.routing_strong_reasoning,
+            "xhigh",
         )
 
-    def test_pro_reasoning_is_high(self) -> None:
-        self.assertEqual(
+    def test_gpt_56_ids_are_not_rewritten(
+        self,
+    ) -> None:
+        for model in (
+            "gpt-5.6-luna",
+            "gpt-5.6-terra",
+            "gpt-5.6-sol",
+        ):
+            normalized, migration = (
+                normalize_legacy_model_id(
+                    model
+                )
+            )
+            self.assertEqual(
+                normalized,
+                model,
+            )
+            self.assertIsNone(
+                migration
+            )
+
+    def test_reasoning_supports_max(
+        self,
+    ) -> None:
+        effort, migration = (
             normalize_reasoning_for_model(
-                "gpt-5-pro",
-                "xhigh",
-            )[0],
-            "high",
+                "gpt-5.6-sol",
+                "max",
+            )
+        )
+        self.assertEqual(
+            effort,
+            "max",
+        )
+        self.assertIsNone(
+            migration
         )
 
-    def test_old_user_config_starts_with_real_ids(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "user.toml"
-            path.write_text(
-                """
-                [llm]
-                model = "gpt-5.6-luna"
-                reasoning = "low"
+    def test_minimal_compatibility_maps_to_low(
+        self,
+    ) -> None:
+        effort, migration = (
+            normalize_reasoning_for_model(
+                "gpt-5.6-luna",
+                "minimal",
+            )
+        )
+        self.assertEqual(
+            effort,
+            "low",
+        )
+        self.assertTrue(
+            migration
+        )
 
-                [model_routing]
-                balanced_model = "gpt-5.6-terra"
-                strong_model = "gpt-5.6-sol"
-                balanced_reasoning = "high"
-                strong_reasoning = "xhigh"
-                """,
-                encoding="utf-8",
-            )
-            args, _ = parse_args(
-                [
-                    "--config",
-                    str(path),
-                    "--no-user-config",
-                    "--print-config",
-                ]
-            )
-        self.assertEqual(args.llm_model, "gpt-5.1")
-        self.assertEqual(args.routing_balanced_model, "gpt-5.1")
-        self.assertEqual(args.routing_strong_model, "gpt-5-pro")
-        self.assertEqual(args.routing_strong_reasoning, "high")
-        self.assertTrue(args.model_migrations)
+    def test_routing_defaults(
+        self,
+    ) -> None:
+        config = (
+            ModelRoutingConfig()
+        )
+        self.assertEqual(
+            config.balanced_model,
+            "gpt-5.6-terra",
+        )
+        self.assertEqual(
+            config.strong_model,
+            "gpt-5.6-sol",
+        )
+        self.assertEqual(
+            config.strong_reasoning,
+            "xhigh",
+        )
 
 
 if __name__ == "__main__":

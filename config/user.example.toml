@@ -1,13 +1,13 @@
 # 이 파일을 config/user.toml로 복사한 뒤 필요한 값만 바꾸세요.
 
 [audio]
-device = "auto"
 preferred_device = "BlackShark"
+end_silence_seconds = 0.4
+max_saved_files = 5
+device = "auto"
 device_recovery = true
 probe_devices = true
 persist_recovered_device = true
-end_silence_seconds = 0.4
-max_saved_files = 5
 
 [wakeword]
 threshold = 0.45
@@ -21,24 +21,10 @@ beam_size = 1
 model = "gpt-5.6-luna"
 reasoning = "low"
 
-[model_routing]
-enabled = true
-balanced_model = "gpt-5.6-terra"
-strong_model = "gpt-5.6-sol"
-balanced_reasoning = "high"
-strong_reasoning = "xhigh"
-allow_user_override = true
-allow_automatic_escalation = true
-max_delegations_per_turn = 1
-max_input_characters = 20000
-max_output_tokens = 1200
-timeout_seconds = 90.0
-fallback_to_default = true
-
 [tts]
 enabled = true
 voice = "ko-KR-InJoonNeural"
-rate_percent = 50
+rate_percent = 4
 pitch_hz = -6
 
 [metrics]
@@ -46,18 +32,23 @@ enabled = true
 # transcript와 답변까지 저장하려면 true.
 include_text = false
 
+
 [conversation]
 enabled = true
 followup_timeout_seconds = 12.0
 max_turns = 8
 
-[streaming]
-enabled = true
-minimum_sentence_characters = 24
-maximum_chunk_characters = 160
+
+[browser]
+control_mode = "system"
+# 설치된 Microsoft Edge
+browser = "msedge"
+executable_path = ""
+profile_directory = "browser_profiles"
 
 [fast_path]
 enabled = true
+
 
 [barge_in]
 enabled = true
@@ -65,10 +56,18 @@ vad_threshold = 0.78
 trigger_speech_seconds = 0.32
 minimum_rms = 0.008
 
+
+[streaming]
+enabled = true
+minimum_sentence_characters = 24
+maximum_chunk_characters = 160
+
+
 [planning]
 enabled = true
 max_steps = 6
 max_repair_attempts = 2
+
 
 [long_term_memory]
 enabled = true
@@ -85,43 +84,12 @@ poll_interval_seconds = 0.5
 announce_with_tts = true
 max_announcements_per_cycle = 3
 
+
 [web_search]
 enabled = true
 external_web_access = true
 max_sources_display = 5
 
-[browser]
-control_mode = "system"
-# 설치된 Microsoft Edge
-browser = "msedge"
-executable_path = ""
-profile_directory = "browser_profiles"
-
-[edge_cdp]
-enabled = true
-endpoint_url = "http://127.0.0.1:9222"
-connect_timeout_seconds = 5.0
-action_timeout_seconds = 10.0
-max_page_text_characters = 16000
-tab_ref_ttl_seconds = 300.0
-screenshot_directory = "screenshots"
-allow_tab_close = true
-auto_start = true
-executable_path = ""
-profile_directory = "data/edge_profile"
-startup_timeout_seconds = 15.0
-startup_poll_seconds = 0.2
-startup_url = ""
-restore_last_session = true
-keep_running_on_exit = true
-
-[windows_uia]
-enabled = true
-backend = "uia"
-element_ttl_seconds = 180.0
-max_elements = 200
-allow_actions = true
-screenshot_directory = "screenshots"
 
 [google_calendar]
 enabled = true
@@ -143,8 +111,56 @@ max_body_characters = 8000
 oauth_port = 0
 open_browser_for_auth = true
 
+
 [confirmation]
 enabled = true
 timeout_seconds = 60.0
 high_risk_code_digits = 4
 max_code_attempts = 3
+
+
+[windows_uia]
+enabled = true
+backend = "uia"
+element_ttl_seconds = 180.0
+max_elements = 200
+allow_actions = true
+screenshot_directory = "screenshots"
+
+[model_routing]
+enabled = true
+balanced_model = "gpt-5.6-terra"
+strong_model = "gpt-5.6-sol"
+balanced_reasoning = "high"
+strong_reasoning = "xhigh"
+allow_user_override = true
+allow_automatic_escalation = true
+max_delegations_per_turn = 1
+max_input_characters = 20000
+max_output_tokens = 1200
+timeout_seconds = 90.0
+fallback_to_default = true
+
+
+
+[edge_cdp]
+enabled = true
+endpoint_url = "http://127.0.0.1:9222"
+connect_timeout_seconds = 5.0
+action_timeout_seconds = 10.0
+max_page_text_characters = 16000
+tab_ref_ttl_seconds = 300.0
+element_ref_ttl_seconds = 180.0
+max_elements = 100
+max_fill_characters = 2000
+screenshot_directory = "screenshots"
+allow_tab_close = true
+allow_dom_actions = true
+auto_start = true
+executable_path = ""
+profile_directory = "data/edge_profile"
+startup_timeout_seconds = 15.0
+startup_poll_seconds = 0.2
+startup_url = ""
+restore_last_session = true
+keep_running_on_exit = true

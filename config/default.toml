@@ -31,7 +31,7 @@ warmup = true
 cpu_threads = 16
 
 [llm]
-model = "gpt-5.1"
+model = "gpt-5.6-luna"
 reasoning = "low"
 max_output_tokens = 512
 timeout_seconds = 60.0
@@ -44,10 +44,10 @@ vision_detail = "original"
 
 [model_routing]
 enabled = true
-balanced_model = "gpt-5.1"
-strong_model = "gpt-5-pro"
+balanced_model = "gpt-5.6-terra"
+strong_model = "gpt-5.6-sol"
 balanced_reasoning = "high"
-strong_reasoning = "high"
+strong_reasoning = "xhigh"
 allow_user_override = true
 allow_automatic_escalation = true
 max_delegations_per_turn = 1

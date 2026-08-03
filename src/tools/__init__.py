@@ -1,4 +1,5 @@
 from .builtin import build_default_tool_registry
+from .edge_cdp_tools import register_edge_cdp_tools
 from src.confirmation import (
     ConfirmationConfig,
     ConfirmationRequirement,
@@ -21,4 +22,5 @@ __all__ = [
     "ToolRegistry",
     "ToolSpec",
     "build_default_tool_registry",
+    "register_edge_cdp_tools",
 ]

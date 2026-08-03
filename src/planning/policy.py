@@ -384,6 +384,11 @@ def verify_action_result(
             "element": payload.get("element"),
             "before": payload.get("before"),
             "after": payload.get("after"),
+            "recovery": payload.get("recovery"),
+            "new_tabs": payload.get("new_tabs"),
+            "active_tab_ref": payload.get(
+                "active_tab_ref"
+            ),
         }
 
     elif tool_name == "edge_cdp_fill_element":
@@ -397,6 +402,10 @@ def verify_action_result(
             "verified": payload.get("verified"),
             "characters": payload.get("characters"),
             "element": payload.get("element"),
+            "recovery": payload.get("recovery"),
+            "effective_element_ref": payload.get(
+                "effective_element_ref"
+            ),
         }
 
     elif tool_name == "edge_cdp_close_tab":

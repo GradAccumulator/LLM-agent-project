@@ -6,6 +6,7 @@ from src.confirmation import (
 )
 from src.edge_cdp import (
     EdgeCdpController,
+    EdgeWorkflowCoordinator,
 )
 
 from .registry import (
@@ -18,6 +19,9 @@ def register_edge_cdp_tools(
     registry: ToolRegistry,
     controller: EdgeCdpController,
 ) -> None:
+    workflow = EdgeWorkflowCoordinator(
+        controller
+    )
     registry.register(
         ToolSpec(
             name="edge_cdp_status",
@@ -102,7 +106,7 @@ def register_edge_cdp_tools(
                 "required": ["limit"],
                 "additionalProperties": False,
             },
-            handler=controller.list_tabs,
+            handler=workflow.list_tabs,
         )
     )
 
@@ -118,12 +122,150 @@ def register_edge_cdp_tools(
                 "properties": {
                     "tab_ref": {
                         "type": "string",
-                    }
+                    },
+                    "workflow_ref": {
+                        "type": [
+                            "string",
+                            "null",
+                        ],
+                    },
                 },
-                "required": ["tab_ref"],
+                "required": [
+                    "tab_ref",
+                ],
                 "additionalProperties": False,
             },
-            handler=controller.select_tab,
+            handler=workflow.select_tab,
+        )
+    )
+
+    registry.register(
+        ToolSpec(
+            name="edge_cdp_find_tabs",
+            description=(
+                "열린 Edge 탭의 제목과 URL에서 query를 검색해 "
+                "일치 점수와 tab_ref를 반환한다. 여러 탭 중 정확한 "
+                "작업 대상을 찾을 때 사용한다."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "minLength": 1,
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 200,
+                    },
+                },
+                "required": [
+                    "query",
+                    "limit",
+                ],
+                "additionalProperties": False,
+            },
+            handler=workflow.find_tabs,
+        )
+    )
+
+    registry.register(
+        ToolSpec(
+            name="edge_cdp_begin_workflow",
+            description=(
+                "여러 탭·여러 페이지에 걸친 Edge 작업을 시작하고 "
+                "workflow_ref와 기준 상태를 저장한다. 다단계 브라우저 "
+                "작업에서는 행동 전에 한 번 호출한다."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "goal": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500,
+                    },
+                    "tab_ref": {
+                        "type": [
+                            "string",
+                            "null",
+                        ],
+                    },
+                },
+                "required": [
+                    "goal",
+                ],
+                "additionalProperties": False,
+            },
+            handler=workflow.begin_workflow,
+        )
+    )
+
+    registry.register(
+        ToolSpec(
+            name="edge_cdp_get_workflow",
+            description=(
+                "Edge 다단계 작업의 목표, 기준 상태, 실행 단계, "
+                "복구 여부와 검증 결과를 읽는다."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "workflow_ref": {
+                        "type": "string",
+                    },
+                },
+                "required": [
+                    "workflow_ref",
+                ],
+                "additionalProperties": False,
+            },
+            handler=workflow.get_workflow,
+        )
+    )
+
+    registry.register(
+        ToolSpec(
+            name="edge_cdp_verify_workflow",
+            description=(
+                "Edge 다단계 작업의 모든 행동이 검증됐는지 확인하고 "
+                "현재 탭의 URL·제목·본문 및 탭 수 조건을 함께 검사한다. "
+                "최종 답변 전에 호출하며 verified=false이면 완료로 말하지 않는다."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "workflow_ref": {
+                        "type": "string",
+                    },
+                    "expected_url_contains": {
+                        "type": "string",
+                    },
+                    "expected_title_contains": {
+                        "type": "string",
+                    },
+                    "expected_text_contains": {
+                        "type": "string",
+                    },
+                    "minimum_tab_count": {
+                        "type": [
+                            "integer",
+                            "null",
+                        ],
+                        "minimum": 0,
+                        "maximum": 200,
+                    },
+                    "require_all_steps_verified": {
+                        "type": "boolean",
+                    },
+                },
+                "required": [
+                    "workflow_ref",
+                ],
+                "additionalProperties": False,
+            },
+            handler=workflow.verify_workflow,
         )
     )
 
@@ -153,14 +295,15 @@ def register_edge_cdp_tools(
                 ],
                 "additionalProperties": False,
             },
-            handler=controller.get_page_info,
+            handler=workflow.get_page_info,
         )
     )
 
-    list_elements = getattr(controller, "list_elements", None)
-    get_element = getattr(controller, "get_element", None)
-    click_element = getattr(controller, "click_element", None)
-    fill_element = getattr(controller, "fill_element", None)
+    list_elements = workflow.list_elements
+    get_element = workflow.get_element
+    find_element = workflow.find_element
+    click_element = workflow.click_element
+    fill_element = workflow.fill_element
     dom_capable = callable(list_elements) and callable(get_element)
     dom_actions_allowed = bool(
         getattr(controller, "allow_dom_actions", False)
@@ -216,6 +359,54 @@ def register_edge_cdp_tools(
             )
         )
 
+        registry.register(
+            ToolSpec(
+                name="edge_cdp_find_element",
+                description=(
+                    "현재 Edge 페이지의 보이는 요소를 label·placeholder·href로 "
+                    "검색하고 일치 점수를 반환한다. unique_best=true인 경우에만 "
+                    "자동 대상 선택에 사용하며 safety는 실행 직전에 재검사된다."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "tab_ref": {
+                            "type": [
+                                "string",
+                                "null",
+                            ],
+                        },
+                        "kind": {
+                            "type": "string",
+                            "enum": [
+                                "all",
+                                "link",
+                                "button",
+                                "textbox",
+                            ],
+                        },
+                        "query": {
+                            "type": "string",
+                            "minLength": 1,
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                        },
+                    },
+                    "required": [
+                        "tab_ref",
+                        "kind",
+                        "query",
+                        "limit",
+                    ],
+                    "additionalProperties": False,
+                },
+                handler=find_element,
+            )
+        )
+
         if dom_actions_allowed and callable(click_element) and callable(fill_element):
             registry.register(
                 ToolSpec(
@@ -228,9 +419,19 @@ def register_edge_cdp_tools(
                     parameters={
                         "type": "object",
                         "properties": {
-                            "element_ref": {"type": "string"},
+                            "element_ref": {
+                                "type": "string",
+                            },
+                            "workflow_ref": {
+                                "type": [
+                                    "string",
+                                    "null",
+                                ],
+                            },
                         },
-                        "required": ["element_ref"],
+                        "required": [
+                            "element_ref",
+                        ],
                         "additionalProperties": False,
                     },
                     handler=click_element,
@@ -253,8 +454,17 @@ def register_edge_cdp_tools(
                                 "type": "string",
                                 "maxLength": 2000,
                             },
+                            "workflow_ref": {
+                                "type": [
+                                    "string",
+                                    "null",
+                                ],
+                            },
                         },
-                        "required": ["element_ref", "value"],
+                        "required": [
+                            "element_ref",
+                            "value",
+                        ],
                         "additionalProperties": False,
                     },
                     handler=fill_element,

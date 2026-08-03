@@ -5,6 +5,9 @@ from .controller import (
     StaleTabReferenceError,
     StaleElementReferenceError,
 )
+from .workflow import (
+    EdgeWorkflowCoordinator,
+)
 from .launcher import (
     ManagedEdgeConfig,
     ManagedEdgeError,
@@ -17,6 +20,7 @@ __all__ = [
     "EdgeCdpError",
     "StaleTabReferenceError",
     "StaleElementReferenceError",
+    "EdgeWorkflowCoordinator",
     "ManagedEdgeConfig",
     "ManagedEdgeError",
     "ManagedEdgeLauncher",

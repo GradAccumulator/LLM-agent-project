@@ -40,7 +40,7 @@ class ModelDelegateTests(unittest.TestCase):
         client = _Client()
         delegate = SelectiveModelDelegate(
             client=client,
-            base_model="gpt-5.1",
+            base_model="gpt-5.6-luna",
             config=ModelRoutingConfig(),
         )
         delegate.begin_turn(
@@ -57,9 +57,9 @@ class ModelDelegateTests(unittest.TestCase):
 
         self.assertTrue(result["delegation_succeeded"])
         call = client.responses.calls[0]
-        self.assertEqual(call["model"], "gpt-5-pro")
+        self.assertEqual(call["model"], "gpt-5.6-sol")
         self.assertEqual(
-            call["reasoning"], {"effort": "high"}
+            call["reasoning"], {"effort": "xhigh"}
         )
         self.assertFalse(call["store"])
         self.assertNotIn("tools", call)
@@ -70,7 +70,7 @@ class ModelDelegateTests(unittest.TestCase):
         client = _Client()
         delegate = SelectiveModelDelegate(
             client=client,
-            base_model="gpt-5.1",
+            base_model="gpt-5.6-luna",
             config=ModelRoutingConfig(),
         )
         delegate.begin_turn("코드 구조를 검토해줘")
@@ -83,7 +83,7 @@ class ModelDelegateTests(unittest.TestCase):
         )
         self.assertEqual(
             result["model"],
-            "gpt-5.1",
+            "gpt-5.6-terra",
         )
         self.assertFalse(
             result["explicit_user_request"]
@@ -92,7 +92,7 @@ class ModelDelegateTests(unittest.TestCase):
     def test_per_turn_limit(self) -> None:
         delegate = SelectiveModelDelegate(
             client=_Client(),
-            base_model="gpt-5.1",
+            base_model="gpt-5.6-luna",
             config=ModelRoutingConfig(
                 max_delegations_per_turn=1
             ),
@@ -113,7 +113,7 @@ class ModelDelegateTests(unittest.TestCase):
         client = _Client()
         delegate = SelectiveModelDelegate(
             client=client,
-            base_model="gpt-5.1",
+            base_model="gpt-5.6-luna",
             config=ModelRoutingConfig(
                 max_input_characters=1000
             ),
@@ -132,7 +132,7 @@ class ModelDelegateTests(unittest.TestCase):
     def test_failure_falls_back(self) -> None:
         delegate = SelectiveModelDelegate(
             client=_Client(fail=True),
-            base_model="gpt-5.1",
+            base_model="gpt-5.6-luna",
             config=ModelRoutingConfig(
                 fallback_to_default=True
             ),

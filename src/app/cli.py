@@ -298,7 +298,7 @@ def build_parser(
 
     parser.add_argument(
         "--llm-model",
-        default="gpt-5.1",
+        default="gpt-5.6-luna",
     )
     parser.add_argument(
         "--llm-reasoning",
@@ -309,6 +309,7 @@ def build_parser(
             "medium",
             "high",
             "xhigh",
+            "max",
         ),
         default="low",
     )
@@ -363,25 +364,25 @@ def build_parser(
     )
     parser.add_argument(
         "--routing-balanced-model",
-        default="gpt-5.1",
+        default="gpt-5.6-terra",
     )
     parser.add_argument(
         "--routing-strong-model",
-        default="gpt-5-pro",
+        default="gpt-5.6-sol",
     )
     parser.add_argument(
         "--routing-balanced-reasoning",
         choices=(
-            "none", "minimal", "low", "medium", "high", "xhigh"
+            "none", "minimal", "low", "medium", "high", "xhigh", "max"
         ),
         default="high",
     )
     parser.add_argument(
         "--routing-strong-reasoning",
         choices=(
-            "none", "minimal", "low", "medium", "high", "xhigh"
+            "none", "minimal", "low", "medium", "high", "xhigh", "max"
         ),
-        default="high",
+        default="xhigh",
     )
     _bool_pair(
         parser,

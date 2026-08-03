@@ -11,11 +11,11 @@ class ModelRoutingConfigTests(unittest.TestCase):
         self.assertTrue(args.model_routing_enabled)
         self.assertEqual(
             args.routing_balanced_model,
-            "gpt-5.1",
+            "gpt-5.6-terra",
         )
         self.assertEqual(
             args.routing_strong_model,
-            "gpt-5-pro",
+            "gpt-5.6-sol",
         )
         self.assertEqual(
             args.routing_max_delegations,
