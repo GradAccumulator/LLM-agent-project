@@ -62,7 +62,7 @@ max_sources_display = 5
 [tts]
 enabled = true
 voice = "ko-KR-InJoonNeural"
-rate_percent = 0
+rate_percent = 50
 volume = 100
 pitch_hz = 0
 max_characters = 1200
@@ -76,12 +76,24 @@ mixer_buffer = 256
 
 
 
+
+[edge_cdp]
+enabled = true
+endpoint_url = "http://127.0.0.1:9222"
+connect_timeout_seconds = 5.0
+action_timeout_seconds = 10.0
+max_page_text_characters = 16000
+tab_ref_ttl_seconds = 300.0
+screenshot_directory = "screenshots"
+allow_tab_close = true
+
 [windows_uia]
 enabled = true
 backend = "uia"
 element_ttl_seconds = 180.0
 max_elements = 200
 allow_actions = true
+screenshot_directory = "screenshots"
 
 [confirmation]
 enabled = true

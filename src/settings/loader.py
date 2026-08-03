@@ -213,6 +213,43 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
             "tts_mixer_buffer", int, _as_int
         ),
     },
+    "edge_cdp": {
+        "enabled": _SettingSpec(
+            "edge_cdp_enabled", bool
+        ),
+        "endpoint_url": _SettingSpec(
+            "edge_cdp_endpoint", str
+        ),
+        "connect_timeout_seconds": _SettingSpec(
+            "edge_cdp_connect_timeout",
+            (int, float),
+            _as_float,
+        ),
+        "action_timeout_seconds": _SettingSpec(
+            "edge_cdp_action_timeout",
+            (int, float),
+            _as_float,
+        ),
+        "max_page_text_characters": _SettingSpec(
+            "edge_cdp_max_page_text",
+            int,
+            _as_int,
+        ),
+        "tab_ref_ttl_seconds": _SettingSpec(
+            "edge_cdp_tab_ttl",
+            (int, float),
+            _as_float,
+        ),
+        "screenshot_directory": _SettingSpec(
+            "edge_cdp_screenshot_dir",
+            str,
+            _as_path,
+        ),
+        "allow_tab_close": _SettingSpec(
+            "edge_cdp_allow_tab_close",
+            bool,
+        ),
+    },
     "windows_uia": {
         "enabled": _SettingSpec("windows_uia_enabled", bool),
         "backend": _SettingSpec("windows_uia_backend", str),
@@ -224,6 +261,11 @@ _SCHEMA: dict[str, dict[str, _SettingSpec]] = {
         ),
         "allow_actions": _SettingSpec(
             "windows_uia_allow_actions", bool
+        ),
+        "screenshot_directory": _SettingSpec(
+            "windows_uia_screenshot_dir",
+            str,
+            _as_path,
         ),
     },
     "confirmation": {

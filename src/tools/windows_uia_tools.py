@@ -56,6 +56,50 @@ def register_windows_uia_tools(
         handler=controller.inspect_window,
     ))
 
+    capture_window_context = getattr(
+        controller,
+        "capture_window_context",
+        None,
+    )
+    if callable(capture_window_context):
+        registry.register(ToolSpec(
+            name="uia_capture_window_context",
+            description=(
+                "정확한 window_id의 화면 이미지와 UI Automation 요소 트리를 "
+                "한 번에 캡처한다. 버튼 위치·오류 화면·요소 이름을 교차 확인할 때 "
+                "사용하며 결과 이미지는 멀티모달 모델에 첨부된다."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "window_id": {
+                        "type": "integer",
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 12,
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 500,
+                    },
+                    "include_value": {
+                        "type": "boolean",
+                    },
+                },
+                "required": [
+                    "window_id",
+                    "max_depth",
+                    "limit",
+                    "include_value",
+                ],
+                "additionalProperties": False,
+            },
+            handler=capture_window_context,
+        ))
+
     registry.register(ToolSpec(
         name="uia_find_elements",
         description=(

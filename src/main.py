@@ -87,6 +87,48 @@ def main() -> int:
         finally:
             client.close()
 
+    if args.edge_cdp_status:
+        from src.edge_cdp import (
+            EdgeCdpConfig,
+            EdgeCdpController,
+        )
+
+        controller = EdgeCdpController(
+            EdgeCdpConfig(
+                enabled=True,
+                endpoint_url=args.edge_cdp_endpoint,
+                connect_timeout_seconds=(
+                    args.edge_cdp_connect_timeout
+                ),
+                action_timeout_seconds=(
+                    args.edge_cdp_action_timeout
+                ),
+                max_page_text_characters=(
+                    args.edge_cdp_max_page_text
+                ),
+                tab_ref_ttl_seconds=(
+                    args.edge_cdp_tab_ttl
+                ),
+                screenshot_directory=(
+                    args.edge_cdp_screenshot_dir
+                ),
+                allow_tab_close=(
+                    args.edge_cdp_allow_tab_close
+                ),
+            )
+        )
+        try:
+            print(
+                json.dumps(
+                    controller.status(),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+        finally:
+            controller.close()
+
     if args.list_browsers:
         from src.browser import format_installed_browsers
 

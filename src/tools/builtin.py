@@ -14,6 +14,7 @@ from src.browser import (
     BrowserController,
     SystemBrowserController,
 )
+from src.edge_cdp import EdgeCdpController
 from src.memory import LocalMemoryStore
 from src.google_calendar import GoogleCalendarClient
 from src.gmail import GmailClient
@@ -26,6 +27,7 @@ from src.confirmation import (
 from src.scheduler import SchedulerStore
 
 from .browser_tools import register_browser_tools
+from .edge_cdp_tools import register_edge_cdp_tools
 from .registry import ToolRegistry, ToolSpec
 from .planning_tools import register_planning_tools
 from .memory_tools import register_memory_tools
@@ -370,6 +372,7 @@ def build_default_tool_registry(
         ConfirmationConfig | None
     ) = None,
     windows_uia: WindowsUiAutomation | None = None,
+    edge_cdp: EdgeCdpController | None = None,
 ) -> ToolRegistry:
     registry = ToolRegistry(
         memory_store=memory_store,
@@ -824,6 +827,15 @@ def build_default_tool_registry(
     if windows_uia is not None and windows_uia.enabled:
         register_windows_uia_tools(registry, windows_uia)
         registry.register_closer(windows_uia.close)
+
+    if edge_cdp is not None and edge_cdp.enabled:
+        register_edge_cdp_tools(
+            registry,
+            edge_cdp,
+        )
+        registry.register_closer(
+            edge_cdp.close
+        )
 
     register_browser_tools(registry, browser_controller)
     registry.register_closer(browser_controller.close)

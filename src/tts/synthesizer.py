@@ -20,7 +20,7 @@ from src.console_io.citations import (
 @dataclass(frozen=True, slots=True)
 class SpeechSynthesizerConfig:
     voice_name: str = 'ko-KR-InJoonNeural'
-    rate: int = 4
+    rate: int = 50
     volume: int = 100
     pitch_hz: int = -6
     max_characters: int = 1_200

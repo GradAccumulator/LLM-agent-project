@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from time import monotonic, sleep
 import re
 import secrets
@@ -23,6 +25,7 @@ class WindowsUiAutomationConfig:
     element_ttl_seconds: float = 180.0
     max_elements: int = 200
     allow_actions: bool = True
+    screenshot_directory: Path = Path("screenshots")
 
     def __post_init__(self) -> None:
         if self.backend != "uia":
@@ -64,11 +67,21 @@ class WindowsUiAutomation:
         desktop_factory: Callable[..., Any] | None = None,
         platform: str | None = None,
         clock: Callable[[], float] = monotonic,
+        screenshot_capture: (
+            Callable[
+                [dict[str, int], Path],
+                Path,
+            ]
+            | None
+        ) = None,
     ) -> None:
         self.config = config
         self._desktop_factory = desktop_factory
         self._platform = platform or sys.platform
         self._clock = clock
+        self._screenshot_capture = (
+            screenshot_capture
+        )
         self._cache: dict[str, _ElementCacheEntry] = {}
 
     @property
@@ -393,6 +406,120 @@ class WindowsUiAutomation:
             "count": len(elements),
             "truncated": len(elements) >= effective_limit,
             "elements": elements,
+        }
+
+    def _capture_bounds(
+        self,
+        bounds: dict[str, int],
+        path: Path,
+    ) -> Path:
+        if self._screenshot_capture is not None:
+            result = self._screenshot_capture(
+                bounds,
+                path,
+            )
+            return Path(result)
+
+        try:
+            import mss
+            import mss.tools
+        except ImportError as exc:
+            raise WindowsUiAutomationError(
+                "mss is missing. Run "
+                "`python -m pip install -r requirements.txt`."
+            ) from exc
+
+        region = {
+            "left": bounds["left"],
+            "top": bounds["top"],
+            "width": bounds["width"],
+            "height": bounds["height"],
+        }
+        try:
+            with mss.mss() as capture:
+                image = capture.grab(region)
+                mss.tools.to_png(
+                    image.rgb,
+                    image.size,
+                    output=str(path),
+                )
+        except Exception as exc:
+            raise WindowsUiAutomationError(
+                "Could not capture the selected window."
+            ) from exc
+        return path
+
+    def capture_window_context(
+        self,
+        *,
+        window_id: int,
+        max_depth: int = 6,
+        limit: int = 120,
+        include_value: bool = False,
+    ) -> dict[str, Any]:
+        window = self._window(window_id)
+        bounds = self._rectangle(window)
+        if (
+            bounds is None
+            or bounds["width"] <= 0
+            or bounds["height"] <= 0
+        ):
+            raise WindowsUiAutomationError(
+                "The selected window has no capturable bounds."
+            )
+
+        inspection = self.inspect_window(
+            window_id=window_id,
+            max_depth=max_depth,
+            limit=limit,
+            include_offscreen=False,
+            include_value=include_value,
+        )
+
+        directory = (
+            self.config
+            .screenshot_directory
+            .expanduser()
+        )
+        directory.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        timestamp = (
+            datetime.now()
+            .strftime(
+                "%Y%m%d_%H%M%S_%f"
+            )
+        )
+        path = (
+            directory
+            / f"{timestamp}_window_{int(window_id)}.png"
+        ).resolve()
+        path = self._capture_bounds(
+            bounds,
+            path,
+        ).resolve()
+        if not path.is_file():
+            raise WindowsUiAutomationError(
+                "Window screenshot was not created."
+            )
+
+        return {
+            "window_id": int(window_id),
+            "window_title": self._name(window),
+            "window_bounds": bounds,
+            "image_path": str(path),
+            "mime_type": "image/png",
+            "element_count": inspection["count"],
+            "elements": inspection["elements"],
+            "truncated": inspection["truncated"],
+            "element_ttl_seconds": (
+                self.config.element_ttl_seconds
+            ),
+            "message": (
+                "창 스크린샷과 UI Automation 요소 정보를 함께 "
+                "캡처했습니다. 이미지와 요소 좌표·이름을 교차 분석하세요."
+            ),
         }
 
     def find_elements(

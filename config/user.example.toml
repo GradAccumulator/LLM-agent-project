@@ -121,7 +121,7 @@ backend = "uia"
 element_ttl_seconds = 180.0
 max_elements = 200
 allow_actions = true
-
+screenshot_directory = "screenshots"
 
 [model_routing]
 enabled = true
@@ -137,3 +137,14 @@ max_output_tokens = 1200
 timeout_seconds = 90.0
 fallback_to_default = true
 
+
+
+[edge_cdp]
+enabled = true
+endpoint_url = "http://127.0.0.1:9222"
+connect_timeout_seconds = 5.0
+action_timeout_seconds = 10.0
+max_page_text_characters = 16000
+tab_ref_ttl_seconds = 300.0
+screenshot_directory = "screenshots"
+allow_tab_close = true

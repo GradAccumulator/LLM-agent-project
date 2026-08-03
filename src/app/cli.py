@@ -90,6 +90,14 @@ def build_parser(
         help="List reminders stored in the scheduler database.",
     )
     parser.add_argument(
+        "--edge-cdp-status",
+        action="store_true",
+        help=(
+            "Check the local Edge CDP connection without "
+            "starting the voice runtime."
+        ),
+    )
+    parser.add_argument(
         "--list-browsers",
         action="store_true",
         help=(
@@ -407,7 +415,7 @@ def build_parser(
     parser.add_argument(
         "--tts-rate",
         type=int,
-        default=0,
+        default=50,
     )
     parser.add_argument(
         "--tts-volume",
@@ -447,6 +455,60 @@ def build_parser(
 
     _bool_pair(
         parser,
+        destination="edge_cdp_enabled",
+        positive=("--edge-cdp",),
+        negative=("--disable-edge-cdp",),
+        positive_help=(
+            "Enable the local Edge CDP bridge."
+        ),
+        negative_help=(
+            "Disable the Edge CDP bridge."
+        ),
+    )
+    parser.add_argument(
+        "--edge-cdp-endpoint",
+        default="http://127.0.0.1:9222",
+    )
+    parser.add_argument(
+        "--edge-cdp-connect-timeout",
+        type=float,
+        default=5.0,
+    )
+    parser.add_argument(
+        "--edge-cdp-action-timeout",
+        type=float,
+        default=10.0,
+    )
+    parser.add_argument(
+        "--edge-cdp-max-page-text",
+        type=int,
+        default=16000,
+    )
+    parser.add_argument(
+        "--edge-cdp-tab-ttl",
+        type=float,
+        default=300.0,
+    )
+    parser.add_argument(
+        "--edge-cdp-screenshot-dir",
+        type=Path,
+        default=Path("screenshots"),
+    )
+    _bool_pair(
+        parser,
+        destination="edge_cdp_allow_tab_close",
+        positive=("--edge-cdp-tab-close",),
+        negative=("--disable-edge-cdp-tab-close",),
+        positive_help=(
+            "Allow confirmed Edge tab closing."
+        ),
+        negative_help=(
+            "Disable Edge tab closing."
+        ),
+    )
+
+    _bool_pair(
+        parser,
         destination="windows_uia_enabled",
         positive=("--windows-uia",),
         negative=("--disable-windows-uia",),
@@ -475,6 +537,11 @@ def build_parser(
         "--windows-uia-max-elements",
         type=int,
         default=200,
+    )
+    parser.add_argument(
+        "--windows-uia-screenshot-dir",
+        type=Path,
+        default=Path("screenshots"),
     )
 
     _bool_pair(
@@ -916,6 +983,8 @@ def build_parser(
         web_search_enabled=True,
         web_search_external_access=True,
         tts_enabled=True,
+        edge_cdp_enabled=True,
+        edge_cdp_allow_tab_close=True,
         windows_uia_enabled=True,
         windows_uia_allow_actions=True,
         confirmation_enabled=True,
@@ -982,6 +1051,7 @@ def print_effective_config(
         "print_config",
         "list_devices",
         "list_browsers",
+        "edge_cdp_status",
         "list_memories",
         "list_tts_voices",
     }

@@ -42,8 +42,9 @@ DEFAULT_INSTRUCTIONS = """\
 - 답변은 음성으로 출력되므로 표, 긴 목록, 긴 코드 블록과 불필요한 마크다운을 피한다.
 - 보통 1~3문장으로 답하고, 필요한 경우에만 더 자세히 설명한다.
 - 사용자의 요청을 수행하는 데 등록된 도구가 필요하면 도구를 사용한다.
-- 현재 화면의 내용, 오류, 코드, 앱 상태를 묻는 질문에는 추측하지 말고 inspect_screen 도구를 사용한다.
-- inspect_screen 결과에 첨부된 이미지를 실제로 분석한 뒤 사용자의 원래 질문에 답한다.
+- 전체 화면의 내용, 오류, 코드, 앱 상태를 묻는 질문에는 추측하지 말고 inspect_screen 도구를 사용한다.
+- 특정 Windows 창의 화면과 UI 구조를 함께 판단해야 하면 uia_capture_window_context를 사용한다.
+- inspect_screen, uia_capture_window_context, edge_cdp_capture_tab 결과에 첨부된 이미지를 실제로 분석한 뒤 사용자의 원래 질문에 답한다.
 - 화면에 보이지 않는 정보는 보인다고 단정하지 않는다.
 - 도구를 사용하지 않고 실제 작업을 수행했다고 거짓말하지 않는다.
 - 도구 결과가 실패라면 성공했다고 말하지 말고 실패 이유를 짧게 설명한다.
@@ -56,6 +57,11 @@ DEFAULT_INSTRUCTIONS = """\
 - 화면 좌표를 추측해서 클릭하지 않는다. UI Automation에서 찾을 수 없는 요소는 지원되지 않는다고 말하고 inspect_screen으로 상황을 설명할 수 있다.
 - 클립보드 읽기는 민감한 내용이 있을 수 있으므로 사용자가 내용을 읽어 달라고 직접 요청한 경우에만 수행한다.
 - 임의 Windows 키 입력, 임의 화면 좌표 클릭, 셸 명령 실행은 지원하지 않는다.
+- 사용자가 현재 Edge 탭·현재 페이지·열린 탭을 말하면 edge_cdp_list_tabs로 정확한 tab_ref를 확인하고 edge_cdp_select_tab, edge_cdp_get_page_info를 사용한다.
+- Edge CDP가 연결되지 않았다면 원격 디버깅이 활성화된 Edge 세션이 필요하다고 설명하고 임의로 다른 탭을 조작하지 않는다.
+- 현재 Edge 페이지의 내용 요약은 edge_cdp_get_page_info(include_text=true)를 우선 사용하고, 시각적 배치가 중요하면 edge_cdp_capture_tab을 추가로 사용한다.
+- Edge 내부 페이지(edge:// 등)는 일반 DOM 본문을 읽을 수 있다고 단정하지 않는다.
+- edge_cdp_close_tab은 별도 승인 전에는 실행되지 않는다.
 - 웹페이지 조작은 Playwright 도구의 DOM 텍스트, label, placeholder를 우선 사용한다.
 - 최신 뉴스, 가격, 일정, 제품 정보, 최근 사건처럼 바뀔 수 있는 공개 정보를 답하려면 OpenAI hosted web_search를 사용한다.
 - 사용자가 단순히 검색해 달라거나 인터넷에서 찾아 달라고 하면 브라우저 창을 열지 말고 hosted web_search로 조사한다.
@@ -646,7 +652,12 @@ class JarvisAgent:
     ) -> str | list[dict[str, Any]]:
         """Convert a local tool result into Responses API tool output."""
 
-        if tool_name != "inspect_screen" or not success:
+        image_tools = {
+            "inspect_screen",
+            "uia_capture_window_context",
+            "edge_cdp_capture_tab",
+        }
+        if tool_name not in image_tools or not success:
             return output
 
         try:

@@ -8,6 +8,10 @@ from src.bargein import (
     BargeInMonitor,
 )
 from src.browser import BrowserAutomationConfig
+from src.edge_cdp import (
+    EdgeCdpConfig,
+    EdgeCdpController,
+)
 from src.conversation import ConversationConfig, ConversationSession
 from src.console_io import ConsoleTextInput
 from src.fastpath import FastPathConfig, LocalCommandRouter
@@ -230,6 +234,33 @@ def build_runtime(
             args.browser_max_page_text
         ),
     )
+    edge_cdp = EdgeCdpController(
+        EdgeCdpConfig(
+            enabled=args.edge_cdp_enabled,
+            endpoint_url=(
+                args.edge_cdp_endpoint
+            ),
+            connect_timeout_seconds=(
+                args.edge_cdp_connect_timeout
+            ),
+            action_timeout_seconds=(
+                args.edge_cdp_action_timeout
+            ),
+            max_page_text_characters=(
+                args.edge_cdp_max_page_text
+            ),
+            tab_ref_ttl_seconds=(
+                args.edge_cdp_tab_ttl
+            ),
+            screenshot_directory=(
+                args.edge_cdp_screenshot_dir
+            ),
+            allow_tab_close=(
+                args.edge_cdp_allow_tab_close
+            ),
+        )
+    )
+
     windows_uia = WindowsUiAutomation(
         WindowsUiAutomationConfig(
             enabled=args.windows_uia_enabled,
@@ -237,6 +268,9 @@ def build_runtime(
             element_ttl_seconds=args.windows_uia_element_ttl,
             max_elements=args.windows_uia_max_elements,
             allow_actions=args.windows_uia_allow_actions,
+            screenshot_directory=(
+                args.windows_uia_screenshot_dir
+            ),
         )
     )
 
@@ -309,6 +343,7 @@ def build_runtime(
         google_calendar_client=google_calendar_client,
         gmail_client=gmail_client,
         windows_uia=windows_uia,
+        edge_cdp=edge_cdp,
         confirmation_config=(
             ConfirmationConfig(
                 enabled=(
@@ -593,6 +628,15 @@ def build_runtime(
     print(
         f"TTS output     : "
         f"{'enabled' if args.tts_enabled else 'disabled'}"
+    )
+    print(
+        f"Edge CDP       : "
+        f"{'enabled' if args.edge_cdp_enabled else 'disabled'} "
+        f"({args.edge_cdp_endpoint})"
+    )
+    print(
+        f"Edge tab close : "
+        f"{'confirmed' if args.edge_cdp_allow_tab_close else 'disabled'}"
     )
     print(
         f"Windows UIA    : "

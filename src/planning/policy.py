@@ -42,6 +42,8 @@ ACTION_TOOLS = {
     "uia_set_value",
     "uia_toggle_element",
     "uia_select_element",
+    "edge_cdp_select_tab",
+    "edge_cdp_close_tab",
 }
 
 _SEQUENCE_MARKERS = (
@@ -338,6 +340,39 @@ def verify_action_result(
         evidence = {
             "selected": payload.get("selected"),
             "element_ref": payload.get("element_ref"),
+        }
+
+    elif tool_name == "edge_cdp_select_tab":
+        tab = payload.get("tab") or {}
+        verified = (
+            payload.get("selected") is True
+            and isinstance(tab, dict)
+            and tab.get("tab_ref")
+            == arguments.get("tab_ref")
+        )
+        strength = "strong"
+        evidence = {
+            "selected": payload.get(
+                "selected"
+            ),
+            "tab_ref": (
+                tab.get("tab_ref")
+                if isinstance(tab, dict)
+                else None
+            ),
+            "title": (
+                tab.get("title")
+                if isinstance(tab, dict)
+                else None
+            ),
+        }
+
+    elif tool_name == "edge_cdp_close_tab":
+        verified = payload.get("closed") is True
+        strength = "strong"
+        evidence = {
+            "closed": payload.get("closed"),
+            "tab": payload.get("tab"),
         }
 
     elif tool_name == "browser_close":
